@@ -1,3 +1,29 @@
+# cnc-remastered-jukebox — `gui` branch
+
+> **This branch is groundwork, not a finished program.** The goal is a faithful
+> rebuild of the game's own jukebox as a companion window on Linux. What exists
+> today is the reverse engineering it needs: the original layouts and textures
+> are extractable ([`tools/dump-jukebox-ui`](tools/dump-jukebox-ui)) and
+> documented in [`docs/JUKEBOX-UI.md`](docs/JUKEBOX-UI.md), and the track data
+> model is already solved by the export path below. The UI itself is not
+> written yet.
+>
+> The stable, finished tool lives on the [`export`](../../tree/export) branch.
+
+## Planned scope
+
+- A window reproducing `UI_MUSICJUKEBOX` and the Red Alert Allied/Soviet skins
+  one to one, from the game's own textures at runtime — nothing redistributed.
+- The same track list the game shows: title, per-game icon, `00:00` duration,
+  Classic/Remastered/Bonus grouping.
+- Launched next to the game through Steam's launch options (`wrapper %command%`),
+  which is the realistic integration point on Linux.
+- Steam Workshop delivery is an aspiration, not a plan: Workshop items for this
+  title are maps and mods, so whether a companion window can ship that way has
+  to be established first. See the open questions in `docs/JUKEBOX-UI.md`.
+
+---
+
 # cnc_trackexport
 
 Exports the full soundtrack of the **Command & Conquer Remastered Collection**

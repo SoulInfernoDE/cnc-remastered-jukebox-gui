@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Dumps the game's own jukebox UI assets, as groundwork for rebuilding it.
+
+Writes, into the output directory:
+
+    bui/*.bui           the layout definitions, zlib-decompressed
+    bui/*.strings.txt   the readable strings of each layout (widget tree,
+                        texture references, font names)
+    textures/*.png      the jukebox textures, converted from DDS
+
+Requires an installed copy of the game.  Ships no game data itself.
+"""
+
+import argparse
+import os
+import re
+import shutil
+import struct
+import subprocess
+import sys
+import zlib
+
+MEG_MAGIC = 0x3F7D70A4
+
+
+def die(msg):
+    sys.stderr.write("Error: %s\n" % msg)
+    sys.exit(1)
+
+
+class Meg(object):
+    """Petroglyph MEG V3 reader.  See docs/FILE-FORMATS.md."""
+
+    def __init__(self, path):
+        self.path = path
+        with open(path, "rb") as f:
+            first, second = struct.unpack("<II", f.read(8))
+            if first == 0xFFFFFFFF and second == MEG_MAGIC:
+                base = 8
+            elif first == MEG_MAGIC:
+                base = 4
+            else:
+                die("%s is not a MEG V3 archive." % path)
+            f.seek(base)
+            data_start, n_names, n_files, tbl_size = struct.unpack("<4I", f.read(16))
+            tbl, names, o = f.read(tbl_size), [], 0
+            while o < len(tbl):
+                ln = struct.unpack_from("<H", tbl, o)[0]
+                o += 2
+                names.append(tbl[o:o + ln].decode("ascii", "replace"))
+                o += ln
+            if data_start - (base + 16 + tbl_size) < n_files * 20:
+                die("%s: file table too short." % path)
+            recs = f.read(n_files * 20)
+        self.entries = []
+        for i in range(n_files):
+            size, offset = struct.unpack_from("<II", recs, i * 20 + 10)
+            ni = struct.unpack_from("<H", recs, i * 20 + 18)[0]
+            self.entries.append((names[ni], size, offset))
+
+    def read(self, offset, size):
+        with open(self.path, "rb") as f:
+            f.seek(offset)
+            return f.read(size)
+
+    def matching(self, pattern):
+        rx = re.compile(pattern, re.I)
+        for name, size, offset in self.entries:
+            if rx.search(name):
+                yield name, self.read(offset, size)
+
+
+def find_game_dir():
+    env = os.environ.get("CNC_REMASTERED_DIR")
+    if env:
+        return env
+    home = os.path.expanduser("~")
+    for r in (os.path.join(home, ".steam", "steam"),
+              os.path.join(home, ".local", "share", "Steam"),
+              os.path.join(home, ".var", "app", "com.valvesoftware.Steam",
+                           ".local", "share", "Steam")):
+        cand = os.path.join(r, "steamapps", "common", "CnCRemastered")
+        if os.path.isfile(os.path.join(cand, "Data", "CONFIG.MEG")):
+            return cand
+    return None
+
+
+def unbui(data):
+    """A .BUI is a small 'CH' header followed by a zlib stream."""
+    off = data.find(b"\x78\x9c")
+    if off < 0:
+        return None
+    try:
+        return zlib.decompress(data[off:])
+    except zlib.error:
+        return None
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("-o", "--out", default="jukebox_ui")
+    ap.add_argument("-g", "--game")
+    args = ap.parse_args()
+
+    game = args.game or find_game_dir()
+    if not game:
+        die("CnCRemastered not found; pass --game or set CNC_REMASTERED_DIR.")
+    data = os.path.join(game, "Data")
+
+    bui_dir = os.path.join(args.out, "bui")
+    tex_dir = os.path.join(args.out, "textures")
+    os.makedirs(bui_dir, exist_ok=True)
+    os.makedirs(tex_dir, exist_ok=True)
+
+    print("Reading layouts from CONFIG.MEG ...")
+    n = 0
+    for name, raw in Meg(os.path.join(data, "CONFIG.MEG")).matching(r"MUSICJUKEBOX.*\.BUI$"):
+        stem = os.path.splitext(name.split("\\")[-1])[0]
+        plain = unbui(raw)
+        if plain is None:
+            sys.stderr.write("  skipped (no zlib stream): %s\n" % stem)
+            continue
+        with open(os.path.join(bui_dir, stem + ".bui"), "wb") as f:
+            f.write(plain)
+        strings = [s.decode("ascii") for s in re.findall(rb"[\x20-\x7e]{4,}", plain)]
+        with open(os.path.join(bui_dir, stem + ".strings.txt"), "w",
+                  encoding="utf-8") as f:
+            f.write("\n".join(strings) + "\n")
+        print("  %-38s %6d bytes, %d strings" % (stem, len(plain), len(strings)))
+        n += 1
+
+    if not shutil.which("ffmpeg"):
+        sys.stderr.write("\nffmpeg not found - skipping texture conversion.\n")
+        return 0
+    if not hasattr(os, "memfd_create"):
+        sys.stderr.write("\nPython 3.8+ needed for texture conversion - skipped.\n")
+        return 0
+
+    print("\nConverting textures from TEXTURES_SRGB.MEG ...")
+    meg = Meg(os.path.join(data, "TEXTURES_SRGB.MEG"))
+    m = 0
+    for name, raw in meg.matching(r"JUKEBOX.*\.DDS$"):
+        stem = os.path.splitext(name.split("\\")[-1])[0].lower()
+        dest = os.path.join(tex_dir, stem + ".png")
+        # ffmpeg's DDS decoder needs a seekable input, so a pipe will not do.
+        # An anonymous memory file is seekable and keeps this free of any
+        # temporary files on disk.
+        fd = os.memfd_create("dds")
+        try:
+            os.write(fd, raw)
+            os.lseek(fd, 0, os.SEEK_SET)
+            os.set_inheritable(fd, True)
+            p = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error",
+                                "-y", "-i", "/dev/fd/%d" % fd, dest],
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               pass_fds=(fd,))
+        finally:
+            os.close(fd)
+        if p.returncode != 0:
+            sys.stderr.write("  failed: %s (%s)\n"
+                             % (stem, p.stderr.decode("utf-8", "replace").strip()[:80]))
+            continue
+        print("  %-38s -> %s" % (stem, os.path.basename(dest)))
+        m += 1
+
+    print("\n%d layouts, %d textures -> %s" % (n, m, os.path.abspath(args.out)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
