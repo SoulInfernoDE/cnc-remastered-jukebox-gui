@@ -1,28 +1,101 @@
 # cnc-remastered-jukebox — `gui` branch
 
-> **This branch is groundwork, not a finished program.** The goal is a faithful
-> rebuild of the game's own jukebox as a companion window on Linux. What exists
-> today is the reverse engineering it needs: the original layouts and textures
-> are extractable ([`tools/dump-jukebox-ui`](tools/dump-jukebox-ui)) and
-> documented in [`docs/JUKEBOX-UI.md`](docs/JUKEBOX-UI.md), and the track data
-> model is already solved by the export path below. The UI itself is not
-> written yet.
->
-> The stable, finished tool lives on the [`export`](../../tree/export) branch.
+A rebuild of the game's music jukebox as a standalone Linux window: the same
+layout, the same skin, the same typefaces, the same captions in your system's
+language. Nothing is redistributed — every pixel and every string is read out
+of your own installation at runtime.
 
-## Planned scope
+```bash
+./cnc-jukebox                 # Soviet skin, system language
+./cnc-jukebox -s allied       # Red Alert, Allied
+./cnc-jukebox -s td           # Tiberian Dawn
+./cnc-jukebox -l EN-US        # override the language
+```
 
-- A window reproducing `UI_MUSICJUKEBOX` and the Red Alert Allied/Soviet skins
-  one to one, from the game's own textures at runtime — nothing redistributed.
-- The same track list the game shows: title, per-game icon, `00:00` duration,
-  Classic/Remastered/Bonus grouping.
-- Launched next to the game through Steam's launch options (`wrapper %command%`),
-  which is the realistic integration point on Linux.
-- Steam Workshop delivery is an aspiration, not a plan: Workshop items for this
-  title are maps and mods, so whether a companion window can ship that way has
-  to be established first. See the open questions in `docs/JUKEBOX-UI.md`.
+The stable soundtrack exporter lives on the [`export`](../../tree/export)
+branch; this branch carries it too.
 
----
+## What makes it a rebuild rather than a lookalike
+
+Nothing here is eyeballed from a screenshot. Every part is read from the game:
+
+| Element | Source |
+| --- | --- |
+| Geometry of all ~40 widgets | `.BUI` layout files in `CONFIG.MEG` |
+| Frame, panels, scanlines, menu backdrop | `TEXTURES_SRGB.MEG` |
+| Typefaces (RA_Orbitron, Francker, Noto CJK) | `DATA\ART\FONTS` in `CONFIG.MEG` |
+| Every caption and label | `MASTERTEXTFILE_<LANG>.LOC` |
+| Track titles, durations, game, type | `<MusicJukeboxTracksList>` |
+| Audio | `MUSIC.MEG` |
+
+The layout numbers come out of the `.BUI` property stream, which stores each
+widget as four floats normalised against its parent. That the model is right
+is checkable in one line: the frame is stored as 0.75156 wide by 1.00370 high,
+which on a 16:9 screen is exactly the 4:3 of the 2160×1620 frame texture.
+See [`docs/JUKEBOX-UI.md`](docs/JUKEBOX-UI.md).
+
+## Language
+
+The captions follow the system locale — `LC_ALL`, `LC_MESSAGES`, `LANG`, then
+`LANGUAGE` — mapped onto the nine languages the game ships (EN-US, DE-DE,
+ES-ES, FR-FR, KO-KR, PL-PL, RU-RU, ZH-CN, ZH-TW), falling back to EN-US.
+Korean and Chinese render through the game's own Noto CJK font.
+
+Where a caption looks untranslated, that is the game's data, not a gap here:
+the Korean table, for instance, genuinely leaves "Available Tracks" and
+"Jukebox Music Volume" in English.
+
+## Requirements
+
+- Command & Conquer Remastered Collection, installed
+- Linux, `python3` 3.6+, `PyQt5`
+- `ffmpeg` for decoding, and one of `paplay`, `aplay` or `ffplay` for output
+
+```bash
+sudo apt install python3-pyqt5 ffmpeg      # Debian / Ubuntu
+sudo dnf install python3-qt5 ffmpeg        # Fedora (ffmpeg via RPM Fusion)
+sudo pacman -S python-pyqt5 ffmpeg         # Arch
+```
+
+Qt Multimedia is deliberately not used: its audio plugins ship in a separate
+package that is often missing, and `QAudioOutput` then falls back to a silent
+null device without saying so. Tracks are decoded with ffmpeg and written to
+`paplay`/`aplay`/`ffplay` instead, which works wherever the desktop has sound.
+
+## Using it
+
+Left-click a track to select it, right-click to move it between the two lists,
+double-click to play. The four plate buttons, the filters, shuffle, the gap and
+volume sliders and the progress bar all behave as they do in the game. The
+playlist, filters and volume are kept in
+`~/.config/cnc-jukebox/playlist.json`.
+
+Space toggles playback, F11 toggles fullscreen, Escape closes.
+
+## Alongside the game
+
+Set the title's Steam launch options to:
+
+```
+/full/path/to/tools/steam-launch-wrapper %command%
+```
+
+Steam substitutes the real launch command, which the wrapper runs unchanged,
+so the game starts exactly as before; the jukebox opens next to it and closes
+with it.
+
+## Not reproduced
+
+- **The launcher window.** The window that appears when you press Play in
+  Steam belongs to `ClientLauncherG.exe`, a Windows binary whose interface
+  assets are embedded in the executable rather than in the data archives.
+  Rebuilding its chrome would mean guessing, so it is left alone.
+- **The two row emblems.** `ui_jukebox_cnctd_icon` and `ui_jukebox_cncra_icon`
+  are named by the layouts but are in none of the shipped texture archives.
+  A brass cog and a red hammer and sickle are drawn instead, in the games'
+  own colours.
+- **No screenshots in this repository.** Any picture of the running window
+  would be a picture of EA's artwork.
 
 # cnc_trackexport
 

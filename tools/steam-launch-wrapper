@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+#
+# Opens the jukebox next to the game, then starts the game.
+#
+# Put this in the title's Steam launch options:
+#
+#     /full/path/to/tools/steam-launch-wrapper %command%
+#
+# Steam replaces %command% with the real launch command, which this script
+# runs unchanged - so the game starts exactly as it otherwise would.  The
+# jukebox is closed again when the game exits.
+#
+set -euo pipefail
+
+here="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+jukebox="$here/cnc-jukebox"
+
+if [ ! -x "$jukebox" ]; then
+    echo "cnc-jukebox not found at $jukebox" >&2
+    exec "$@"
+fi
+
+"$jukebox" &
+pid=$!
+trap 'kill "$pid" 2>/dev/null || true' EXIT
+
+if [ "$#" -gt 0 ]; then
+    "$@"
+else
+    wait "$pid"
+fi

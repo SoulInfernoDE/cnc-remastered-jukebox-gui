@@ -110,15 +110,74 @@ The rebuild needs nothing beyond what the export path already reads:
 
 See [`FILE-FORMATS.md`](FILE-FORMATS.md) for the container details.
 
-## Open questions
+## Geometry
 
-- The binary widget layout (positions, anchors, nine-slice metrics) is not
-  decoded yet; only names, textures and colours are recovered. Exact geometry
-  still has to be measured against screenshots.
-- The fonts are referenced by style name ("46 Point Outline"), not by file.
-  Which font asset backs them is not established.
-- Launching alongside the game on Linux is straightforward through Steam's
-  launch options (`wrapper %command%`), which is the intended integration
-  point. Whether a companion window can be delivered through the Steam
-  Workshop at all is **not** established — Workshop items for this title are
-  maps and mods, so this needs verifying before it is promised.
+Each widget stores a rectangle as four floats normalised against its parent,
+under tag `0x02` with length `0x10`.  Widgets appear depth-first and the
+rectangle precedes the name, so pairing each rectangle with the following name
+recovers the flat list; the nesting itself is not in a form we decode, so the
+ancestry of the widgets that matter is declared in `jukebox/layout.py`.
+
+Two frames of reference are in play, and mixing them up is the trap:
+
+- **Red Alert** wraps the panel in `SovietJukebox_Group` / `AlliesJukebox_Group`
+  and states the contents relative to it.
+- **Tiberian Dawn** has no such group and states the same widgets in screen
+  space.
+
+Both resolve to the same absolute positions, which is the check that the model
+is right: `Available_Songs` lands on 0.16979 of screen width either way.
+
+The decisive test for the outer frame is the aspect ratio.  The group is stored
+as 0.75156 wide by 1.00370 high; on a 16:9 screen that is 12.02 by 9.03 units,
+exactly the 4:3 of the 2160x1620 frame texture.  Read as relative to the
+dialog instead it would come out square, which no texture matches.  So the
+group is positioned in screen space, and it *is* the window.
+
+### Cropping the frame
+
+The background texture carries a soft drop shadow outside the metal frame.
+In the game that blends into the menu behind it; a standalone window would
+show it as a black margin.  Measured on the alpha channel, the fully opaque
+frame occupies x 47..2113, y 33..1585 of 2160x1620 - normalised
+(0.02176, 0.02037, 0.95648, 0.95802), aspect 1.3312.  Scaling the drawing
+surface up by that inset puts the shadow outside the window, and widget
+rectangles resolved against the same surface stay aligned.
+
+## Textures
+
+The jukebox textures are uncompressed 32-bit DDS whose channel masks
+(R=0x00ff0000, G=0x0000ff00, B=0x000000ff, A=0xff000000) describe exactly the
+memory layout of `QImage::Format_ARGB32`, so the block after the 128-byte
+header can be handed to Qt without any decoding step.
+
+Tiberian Dawn's list panels are transparent: the layouts stack a full-screen
+`Background` (`ui_mainmenubg_01`, or `ui_ra_menu_bg` for Red Alert) and a
+`Background_Darken` behind the frame, and without both the menu artwork reads
+straight through the panels.
+
+## Fonts
+
+`CONFIG.MEG` carries the interface typefaces under `DATA\ART\FONTS`:
+
+| File | Family | Used for |
+| --- | --- | --- |
+| `RA_ORBITRON.TTF` | RA_Orbitron | the Red Alert screens |
+| `FRANCKERW1G-CONDENSEDREG.TTF` | Francker W1G | the Tiberian Dawn screens |
+| `RUSSEL SQUARE.TTF` | RussellSquare | the Command & Conquer logo |
+| `NOTOSANSCJKTC-REGULAR.TTF` | Noto Sans CJK TC | Korean and Chinese |
+
+They load straight into Qt with `QFontDatabase::addApplicationFontFromData`,
+so the rebuild matches the original typography without shipping a font.
+
+## Still open
+
+- The binary widget stream is only partly decoded: rectangles, names, colours
+  and texture references read out cleanly, but anchors, nine-slice metrics and
+  the parent/child links do not.  The ancestry is therefore declared by hand.
+- `ui_jukebox_cnctd_icon` and `ui_jukebox_cncra_icon` are named by the layouts
+  but are in none of the shipped texture archives, under that name or any
+  obvious variant.  Where they actually come from is unresolved.
+- The point sizes in the layouts ("46 Point Outline", "18 Point Outline") are
+  read as style names only; the rebuild sizes text as a fraction of the window
+  height instead, tuned against the game's own screens.
