@@ -25,7 +25,13 @@ Benutzung:  cnc_trackexport [OPTIONEN]
 
   -o, --out DIR      Zielverzeichnis        (Standard: ./cnc_soundtrack)
   -g, --game DIR     Spielverzeichnis       (Standard: automatisch gesucht)
-  -f, --format FMT   mp3 | flac | wav       (Standard: mp3)
+  -f, --format FMT   Ausgabeformat          (Standard: mp3)
+                       mp3   44,1 kHz / 320 kbit/s, getaggt, mit Cover
+                       flac  VERLUSTFREI, Original-Abtastrate, getaggt,
+                             mit Cover.  Bit-identisch zur Quelle, belegt
+                             dafuer rund das 2,5-fache (etwa 3,3 GiB).
+                       wav   die unveraenderten ADPCM-Originaldateien aus
+                             dem Archiv, Byte fuer Byte, ohne Tags
   -l, --lang LANG    EN-US, DE-DE, ...      (Standard: EN-US)
   -j, --jobs N       Parallele Encoder      (Standard: CPU-Kerne, max. 16)
       --no-cover     Kein Artwork einbetten

@@ -59,8 +59,8 @@ sudo pacman -S python ffmpeg         # Arch
 ## Usage
 
 ```bash
-git clone https://github.com/OWNER/REPO.git
-cd REPO
+git clone https://github.com/SoulInfernoDE/cnc-remastered-jukebox.git
+cd cnc-remastered-jukebox
 ./cnc_trackexport
 ```
 
@@ -105,7 +105,20 @@ the material:
 over 8192-sample frames — a phase-independent comparison, so encoder delay
 cannot flatter the result.)
 
-FLAC output keeps the original sample rate instead, since it is lossless.
+### Lossless output
+
+`--format flac` is the archival option. It keeps each track at its original
+sample rate and is **bit-exact**: decoding the FLAC and decoding the source
+ADPCM produce byte-identical PCM (verified by comparing MD5 sums of the raw
+decoded streams for all three sample-rate variants in the archive). Tags and
+cover art are embedded exactly as they are for MP3.
+
+It costs roughly 2.5× the space of the MP3 export — about 3.3 GiB — because
+the source is 4-bit ADPCM while FLAC stores the decoded 16-bit PCM losslessly.
+
+`--format wav` is the third option: the untouched ADPCM files straight out of
+the archive, byte for byte, with no tags and no re-encoding. Smallest of the
+three (~1.4 GiB), but awkward for most players.
 
 ## Tags
 
