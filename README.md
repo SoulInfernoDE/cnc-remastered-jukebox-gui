@@ -146,6 +146,19 @@ held in an anonymous memory file (`memfd_create`) handed over as `/dev/fd/N`.
 When the run finishes, the output directory contains the finished tracks and
 nothing else.
 
+## Also in this repository
+
+The [`gui`](../../tree/gui) branch carries a rebuild of the game's own music
+jukebox as a standalone Linux window — the same layout, skin and typefaces,
+with every caption in your system's language. It reads all of that from your
+installation at runtime, the same way this exporter reads the track names: the
+widget geometry comes out of the `.BUI` layout files, the skin out of
+`TEXTURES_SRGB.MEG`, and the fonts out of `CONFIG.MEG`.
+
+It is a separate program with its own requirements (PyQt5 on top of ffmpeg),
+so it lives on its own branch rather than here. This branch stays what it is:
+one script, no install, no extra dependencies.
+
 ## Legal
 
 This is an unofficial fan project. It is **not affiliated with, endorsed by, or
