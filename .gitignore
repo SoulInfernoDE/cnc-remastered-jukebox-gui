@@ -1,0 +1,9 @@
+# Exportierte Tracks - gehoeren niemals ins Repository.
+cnc_soundtrack/
+*.mp3
+*.flac
+*.wav
+*.jpg
+
+__pycache__/
+*.pyc
