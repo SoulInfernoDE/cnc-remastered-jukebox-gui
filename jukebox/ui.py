@@ -103,6 +103,11 @@ SKIN_SFX = {
 }
 SKIN_ORDER = ("soviet", "allied", "td")
 BUILD_SECONDS = 3.0
+TOAST_SECONDS = 1.8
+EMBLEM_THICKNESS = 0.30          # rim depth as a fraction of the emblem width
+EMBLEM_MIN_FACE = 0.10           # the face never squeezes to nothing
+EMBLEM_BODY = QColor(74, 58, 34)   # the extruded material
+EMBLEM_EDGE = QColor(150, 122, 68)  # its lit near edge
 
 # The two brass bolts on the header plate, measured on the background texture
 # (centres and radius, normalised against it).
@@ -123,6 +128,10 @@ FRAME_ASPECT = 2066 / 1552.0
 def config_path():
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
     return os.path.join(base, "cnc-jukebox", "playlist.json")
+
+
+def t_now():
+    return time.monotonic()
 
 
 def hms(seconds):
@@ -168,6 +177,7 @@ class JukeboxWindow(QWidget):
         self.tex = Textures(data.textures)
         self.atlas = Atlas(data.textures)
         self._sprite_cache = {}
+        self._shadow_cache = {}
         self.bg_img, self.scan_img = self.tex.skin(self.skin)
         self.menu_img = self.tex.menu_background(self.skin)
         self._bg_cache = None
@@ -200,6 +210,7 @@ class JukeboxWindow(QWidget):
         self._hover = None                # Hit under the cursor
         self._spin = 0.0                  # rotation of the playing track emblem
         self._build = None                # skin-change sequence, see _tick_build
+        self._toast = None                # (started, text) confirmation
 
         self._spin_timer = QTimer(self)
         self._spin_timer.setInterval(33)
@@ -242,6 +253,10 @@ class JukeboxWindow(QWidget):
             busy = True
         if self._build is not None:
             self._tick_build()
+            busy = True
+        if self._toast is not None:
+            if time.monotonic() - self._toast[0] > TOAST_SECONDS:
+                self._toast = None
             busy = True
         if busy:
             self.update()
@@ -453,6 +468,7 @@ class JukeboxWindow(QWidget):
         self._paint_now_playing(p)
         self._paint_footer(p)
         self._paint_build_overlay(p)
+        self._paint_toast(p)
         self._paint_tooltip(p)
         p.end()
 
@@ -606,12 +622,7 @@ class JukeboxWindow(QWidget):
         if pm is not None:
             spin = (track is self.current and self.player.state == "playing")
             if spin:
-                p.save()
-                p.setRenderHint(QPainter.SmoothPixmapTransform, True)
-                p.translate(box.center())
-                p.rotate(self._spin)
-                p.drawPixmap(QRect(-side // 2, -side // 2, side, side), pm)
-                p.restore()
+                self._paint_spinning_emblem(p, box, pm, self._spin)
             else:
                 p.drawPixmap(box, pm)
             return
@@ -631,6 +642,66 @@ class JukeboxWindow(QWidget):
             p.setPen(QPen(QColor(206, 158, 60), max(1.5, rad * 0.30)))
             p.setBrush(Qt.NoBrush)
             p.drawEllipse(QPoint(0, 0), int(rad * .80), int(rad * .80))
+        p.restore()
+
+    def _tinted(self, pm, colour):
+        """The emblem's own silhouette filled with one colour."""
+        key = (pm.cacheKey(), colour.rgba())
+        hit = self._shadow_cache.get(key)
+        if hit is None:
+            hit = QPixmap(pm)
+            q = QPainter(hit)
+            q.setCompositionMode(QPainter.CompositionMode_SourceIn)
+            q.fillRect(hit.rect(), colour)
+            q.end()
+            self._shadow_cache[key] = hit
+        return hit
+
+    def _paint_spinning_emblem(self, p, box, pm, deg):
+        """Turns the emblem about its vertical axis as a solid, thick token.
+
+        A plain 2D rotation reads as a sheet of paper.  What gives an object
+        depth is that it is extruded: the face is foreshortened by cos, while
+        behind it sit opaque copies of its own silhouette spread across the
+        thickness.  Because those follow the emblem's alpha rather than a
+        bounding box, the shape stays the emblem's own instead of becoming a
+        slab.  A lighter copy at the near edge catches the light, so edge-on
+        the token reads as thick metal rather than disappearing.  Past 90
+        degrees cos turns negative and the back face is mirrored, as a struck
+        token would be.
+        """
+        c = math.cos(math.radians(deg))
+        sn = math.sin(math.radians(deg))
+        w, h = box.width(), box.height()
+        depth = abs(sn) * max(2.5, w * EMBLEM_THICKNESS)
+        squeeze = c if abs(c) > EMBLEM_MIN_FACE else (
+            EMBLEM_MIN_FACE if c >= 0 else -EMBLEM_MIN_FACE)
+
+        p.save()
+        p.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        p.translate(box.center())
+        target = QRect(-w // 2, -h // 2, w, h)
+        direction = -1.0 if sn >= 0 else 1.0
+
+        if depth > 0.5:
+            body = self._tinted(pm, EMBLEM_BODY)
+            edge = self._tinted(pm, EMBLEM_EDGE)
+            layers = max(4, int(depth * 1.6))
+            for i in range(layers, 0, -1):
+                t = i / float(layers)
+                p.save()
+                p.translate(direction * depth * t, 0.0)
+                p.scale(squeeze, 1.0)
+                # The far-most slice catches the light, giving the rim a
+                # highlight instead of a flat block of shadow.
+                p.drawPixmap(target, edge if i == layers else body)
+                p.restore()
+
+        p.save()
+        p.scale(squeeze, 1.0)
+        p.setOpacity(0.80 + 0.20 * abs(c))
+        p.drawPixmap(target, pm)
+        p.restore()
         p.restore()
 
     def _paint_scrollbar(self, p, which, content_h, view_h):
@@ -681,11 +752,13 @@ class JukeboxWindow(QWidget):
 
     def _paint_footer(self, p):
         t = self.data
-        for key, kind, txt in (("btn_cancel", "back", "TEXT_BACK"),
-                               ("btn_apply", "apply", "TEXT_APPLY")):
+        for key, kind, txt, tip in (
+                ("btn_cancel", "exit", "TEXT_EXIT", None),
+                ("btn_apply", "apply", "TEXT_APPLY",
+                 t.text("TEXT_JUKEBOX_CUSTOM_PLAYLIST_TRACKS_WITH_COUNT"))):
             rect = self.r(key)
             self._plate(p, rect, t.text(txt))
-            self.hits.append(Hit(rect, kind))
+            self.hits.append(Hit(rect, kind, tip=tip))
 
     # -- options ---------------------------------------------------------
     def _checkbox(self, p, rect, on, kind):
@@ -896,6 +969,26 @@ class JukeboxWindow(QWidget):
                             s.width(), int(s.height() * 0.05)),
                    label, 0.030, TEXT, Qt.AlignCenter)
 
+    def _paint_toast(self, p):
+        if self._toast is None:
+            return
+        age = time.monotonic() - self._toast[0]
+        fade = max(0.0, min(1.0, (TOAST_SECONDS - age) / 0.5))
+        rect = self.r("btn_apply")
+        p.setFont(self.font(0.0150))
+        fm = QFontMetrics(p.font())
+        text = self._toast[1]
+        w = fm.horizontalAdvance(text) + 22
+        box = QRect(rect.center().x() - w // 2, rect.y() - fm.height() - 14,
+                    w, fm.height() + 10)
+        p.setOpacity(fade)
+        p.setPen(QPen(self.accent, 2))
+        p.setBrush(QColor(14, 14, 16, 240))
+        p.drawRoundedRect(box, 3, 3)
+        p.setPen(TEXT)
+        p.drawText(box, Qt.AlignCenter, text)
+        p.setOpacity(1.0)
+
     def _paint_tooltip(self, p):
         h = self._hover
         if h is None or not h.tip:
@@ -992,10 +1085,14 @@ class JukeboxWindow(QWidget):
             self._drag = kind
             self._drag_to(ev.pos())
         elif kind == "apply":
+            # Writes the playlist and settings out now and stays open.  The
+            # window saves on close as well, so this is the deliberate
+            # "keep it, I am done editing" and says so for a moment.
             self.save()
-            self.closed.emit()
-            self.close()
-        elif kind == "back":
+            self._toast = (t_now(), "%s (%d)" % (
+                self.data.text("TEXT_JUKEBOX_CUSTOM_PLAYLIST_TRACKS_WITH_COUNT"),
+                len(self.playlist)))
+        elif kind == "exit":
             self.closed.emit()
             self.close()
         self.update()

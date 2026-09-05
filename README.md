@@ -66,16 +66,27 @@ null device without saying so. Tracks are decoded with ffmpeg and written to
 ## Using it
 
 The window is frameless, so only the jukebox itself is on screen. Drag it by
-any empty part of the panel; Escape or the *Back* button closes it, F11 toggles
+any empty part of the panel; Escape or *Exit* closes it, F11 toggles
 fullscreen, Space toggles playback.
 
 Left-click a track to select it, right-click to move it between the two lists,
 double-click to play. The four plate buttons, the filters, shuffle, the gap and
-volume sliders and the progress bar all behave as they do in the game. The
-emblem of the track currently playing turns while it plays.
+volume sliders and the progress bar all behave as they do in the game.
+
+The emblem of the track currently playing turns while it plays, as a struck
+token rather than a sheet of paper: the face is foreshortened while copies of
+the emblem's own outline fill the thickness behind it, the nearest slice lit,
+so edge-on it shows a solid rim instead of disappearing.
 
 The playlist, filters, volume and chosen skin are kept in
 `~/.config/cnc-jukebox/playlist.json`.
+
+**Exit** closes the jukebox. **Apply** writes the playlist and settings out
+there and then and stays open, confirming with the number of tracks it stored.
+The window saves on close as well, so Apply is the deliberate "keep this, I am
+done editing". In the game that button hands the playlist to the battle that
+follows; standing on its own there is nothing to hand it to, so it commits the
+file instead.
 
 ### The three header controls
 
