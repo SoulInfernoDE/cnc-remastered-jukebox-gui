@@ -49,6 +49,27 @@ def _gain(data, factor):
     return data
 
 
+def _rms(pcm):
+    """Loudness of decoded PCM, 0 when there is nothing there."""
+    if not pcm:
+        return 0.0
+    if _np is not None:
+        a = _np.frombuffer(pcm, dtype="<i2")
+        if a.size == 0:
+            return 0.0
+        return float(_np.sqrt(_np.mean(a.astype(_np.float64) ** 2)))
+    if _audioop is not None:
+        return float(_audioop.rms(pcm, SAMPLE_BYTES))
+    return -1.0                           # cannot measure: treat as audible
+
+
+# A line a localisation never recorded still ships as a file, holding room
+# tone rather than nothing: Tiberian Dawn's "battle control terminated" reads
+# 19 RMS in German where the real recordings sit between 3400 and 7900.  The
+# floor is seventeen times either way, so it cannot mistake one for the other.
+SILENCE_FLOOR = 200.0
+
+
 def _sink_command():
     """The first available raw-PCM sink, most desktop-native first."""
     if shutil.which("paplay"):
@@ -254,21 +275,35 @@ class Player(QObject):
         self._volume = max(0.0, min(1.0, v))          # picked up by the pump
 
 
-def play_effect(wav_bytes, volume=0.9):
+def play_effect(wav_bytes, volume=0.9, fallback=None):
     """Fires off one short sound and returns at once.
 
     Used for the interface effects, which must not disturb the music: the
     decode and the write both happen on a worker thread, and nothing is kept.
+
+    `fallback` is played in place of a clip that turns out to be silent.  The
+    test costs nothing: the decode has happened by then anyway, on the same
+    worker thread, so the caller is never held up for it.
     """
     cmd = _sink_command()
     if cmd is None or not wav_bytes:
         return
 
-    def work():
+    def decoded(raw):
         try:
-            pcm = decode(wav_bytes)
+            return decode(raw)
         except Exception:
+            return None
+
+    def work():
+        pcm = decoded(wav_bytes)
+        if pcm is None:
             return
+        if fallback is not None and fallback is not wav_bytes \
+                and 0 <= _rms(pcm) < SILENCE_FLOOR:
+            alt = decoded(fallback)
+            if alt is not None and _rms(alt) >= SILENCE_FLOOR:
+                pcm = alt
         if volume < 0.999:
             pcm = _gain(pcm, volume)
         try:

@@ -544,7 +544,26 @@ class JukeboxWindow(QWidget):
         stem = SKIN_SFX.get(skin, {}).get(which)
         if not stem or not self.button_sfx:
             return False
-        play_effect(self.data.sfx(stem), min(1.0, self.volume + 0.15))
+        return self._play_line(stem)
+
+    def _play_line(self, stem):
+        """Plays one effect, in English where the local recording is blank.
+
+        Tiberian Dawn's "battle control terminated" was never recorded in
+        German: the file ships all the same, holding a quarter-second of room
+        tone, so the Exit button in that skin used to close in silence.  And a
+        language whose voice pack Steam has not downloaded has no file at all.
+        Either way the English recording stands in - the same rule the sound
+        box already follows for lines the game itself left untranslated.  The
+        English clip is fetched but only decoded if the local one turns out
+        silent, and that decision is made on the worker thread.
+        """
+        wav = self.data.sfx(stem)
+        alt = None if self.data.language == "EN-US" else self.data.sfx(stem, "EN-US")
+        if not wav and not alt:
+            return False
+        play_effect(wav or alt, min(1.0, self.volume + 0.15),
+                    fallback=alt if wav else None)
         return True
 
     def _tick_build(self):
@@ -1489,7 +1508,7 @@ class JukeboxWindow(QWidget):
             self.start_skin_change()
         elif kind == "folder":
             if self.button_sfx:
-                play_effect(self.data.sfx(FOLDER_SFX), min(1.0, self.volume + 0.15))
+                self._play_line(FOLDER_SFX)
             self.open_track_folder()
         elif kind == "playpause":
             if self.current is None and self.playlist:

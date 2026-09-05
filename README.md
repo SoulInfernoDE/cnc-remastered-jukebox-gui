@@ -111,7 +111,15 @@ The playlist, filters, volume, button sounds and chosen skin are kept in
 is built, since the layout, textures, fonts and icon all come from it. `--skin`
 still overrides it for one run.
 
-**Exit** closes the jukebox, with EVA signing off in that game's own voice.
+**Exit** closes the jukebox, with EVA signing off in that game's own voice —
+in English where the local recording is blank. Tiberian Dawn's "battle control
+terminated" was never recorded in German: the file ships all the same, holding
+a quarter-second of room tone at 19 RMS where the real lines sit between 3400
+and 7900, so that skin's Exit button used to close in silence. Any clip
+measuring under 200 RMS is replaced by the English one, which is also what
+happens when Steam has not downloaded the voice pack for the language you are
+running in. The measurement is free: it happens on the worker thread that was
+decoding the clip anyway, and the stand-in is only decoded if it is needed.
 The button beside it switches screens and is named after where it leads:
 **Soundbox** from the jukebox, **Jukebox** from the sound box, each announced
 in that game's own voice — EVA reporting new build options on the way in, the

@@ -204,7 +204,7 @@ class GameData(object):
         self.music = Meg(os.path.join(data, "MUSIC.MEG"))
         self.textures = Meg(os.path.join(data, "TEXTURES_SRGB.MEG"))
         self._data_dir = data
-        self._sfx_megs = None
+        self._sfx_megs = {}                 # language -> archives, opened once
 
         have = [l for l in LANGUAGES
                 if self.config.get(LOC_PATH.format(l)) is not None]
@@ -270,35 +270,44 @@ class GameData(object):
         return self.music.read(track.offset, track.size)
 
     # -- sound effects ---------------------------------------------------
-    def sfx(self, stem):
+    def sfx(self, stem, language=None):
         """One effect by its stem, e.g. "TDR_SFX_CONSTRU2".
 
         Spoken EVA lines live in SFX2D_<LANG>.MEG and carry a language suffix;
         the rest sit in SFX3D.MEG and SFX2D_ALL.MEG without one.  Returns the
         WAV bytes, or None.
+
+        `language` asks for another language's recording of the same line.
+        Steam downloads only the voice packs the title is set to, so a jukebox
+        run with --lang for a language the installation does not carry finds
+        nothing here, and English is the sensible stand-in.
         """
-        if self._sfx_megs is None:
-            self._sfx_megs = []
-            for name in ("SFX3D.MEG", "SFX2D_ALL.MEG",
-                         "SFX2D_%s.MEG" % self.language):
-                path = os.path.join(self._data_dir, name)
-                if os.path.isfile(path):
-                    try:
-                        self._sfx_megs.append(Meg(path))
-                    except GameDataError:
-                        pass
+        lang = language or self.language
         for wanted in ("%s.WAV" % stem,
-                       "%s\\%s_%s.WAV" % (self.language, stem, self.language)):
-            for meg in self._sfx_megs:
+                       "%s\\%s_%s.WAV" % (lang, stem, lang)):
+            for meg in self._sfx_archives(lang):
                 raw = meg.get(wanted)
                 if raw is not None:
                     return raw
         return None
 
+    def _sfx_archives(self, language):
+        """The archives that can hold one language's effects, opened once."""
+        if language not in self._sfx_megs:
+            out = []
+            for name in ("SFX3D.MEG", "SFX2D_ALL.MEG", "SFX2D_%s.MEG" % language):
+                path = os.path.join(self._data_dir, name)
+                if os.path.isfile(path):
+                    try:
+                        out.append(Meg(path))
+                    except GameDataError:
+                        pass
+            self._sfx_megs[language] = out
+        return self._sfx_megs[language]
+
     def _sfx_list(self):
         """The sound archives, opened once and kept."""
-        self.sfx("")                       # forces the lazy open
-        return self._sfx_megs or []
+        return self._sfx_archives(self.language)
 
     def texture_archive(self, filename):
         """One of the per-game texture archives, opened on first use."""
