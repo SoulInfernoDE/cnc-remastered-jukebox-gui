@@ -68,7 +68,7 @@ That is all. The game directory is found automatically — standard Steam,
 Flatpak, Snap, and any extra library listed in `libraryfolders.vdf`.
 
 ```
-  -o, --out DIR      output directory        (default: ./cnc_soundtrack)
+  -o, --out DIR      output directory        (default: the game's own folder)
   -g, --game DIR     game directory          (default: autodetected)
   -f, --format FMT   mp3 | flac | wav        (default: mp3)
   -l, --lang LANG    EN-US, DE-DE, ...       (default: EN-US)
@@ -81,6 +81,12 @@ Flatpak, Snap, and any extra library listed in `libraryfolders.vdf`.
 ```
 
 `CNC_REMASTERED_DIR` overrides the search if autodetection fails.
+
+By default the tracks go to the game's own user folder —
+`Documents/CnCRemastered/Soundtrack` inside the Proton prefix, next to `Mods`,
+`Save` and `Replays`, which Steam leaves alone on updates. If that folder
+cannot be found the music directory is used instead. `--out` overrides it, and
+the destination is always printed before encoding starts.
 
 Interrupting with Ctrl+C is safe: partial files are removed, and the next run
 resumes where it stopped.

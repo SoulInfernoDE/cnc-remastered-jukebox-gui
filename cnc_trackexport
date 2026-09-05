@@ -23,7 +23,12 @@ stehen.  Sie werden nicht geraten, sondern aus den Spieldaten gelesen:
 
 Benutzung:  cnc_trackexport [OPTIONEN]
 
-  -o, --out DIR      Zielverzeichnis        (Standard: ./cnc_soundtrack)
+  -o, --out DIR      Zielverzeichnis
+                     Standard: der Soundtrack-Ordner des Spiels, also
+                     Documents/CnCRemastered/Soundtrack im Proton-Prefix
+                     neben Mods, Save und Replays.  Steam laesst den bei
+                     Updates in Ruhe.  Ist er nicht auffindbar, wird der
+                     Musikordner benutzt.
   -g, --game DIR     Spielverzeichnis       (Standard: automatisch gesucht)
   -f, --format FMT   Ausgabeformat          (Standard: mp3)
                        mp3   44,1 kHz / 320 kbit/s, getaggt, mit Cover
@@ -269,6 +274,28 @@ def steam_roots():
     return roots
 
 
+def soundtrack_dir(game_dir):
+    """Where the game keeps user content, so the tracks sit with the game.
+
+    Under Proton that is Documents/CnCRemastered inside the prefix, next to
+    Mods, Save and Replays.  Steam leaves it alone on updates, unlike the
+    install directory.  Falls back to the music folder, then to the working
+    directory.
+    """
+    marker = os.path.join("steamapps", "common", "CnCRemastered")
+    if game_dir and game_dir.endswith(marker):
+        base = game_dir[:-len(marker)]
+        docs = os.path.join(base, "steamapps", "compatdata", "1213210", "pfx",
+                            "drive_c", "users", "steamuser", "Documents",
+                            "CnCRemastered")
+        if os.path.isdir(docs):
+            return os.path.join(docs, "Soundtrack")
+    music = os.environ.get("XDG_MUSIC_DIR") or os.path.expanduser("~/Music")
+    if os.path.isdir(music):
+        return os.path.join(music, "C&C Remastered Soundtrack")
+    return "cnc_soundtrack"
+
+
 def find_game_dir():
     env = os.environ.get("CNC_REMASTERED_DIR")
     if env:
@@ -411,7 +438,7 @@ def build_command(track, dest, fmt, cover):
 
 def main():
     ap = argparse.ArgumentParser(add_help=False)
-    ap.add_argument("-o", "--out", default="cnc_soundtrack")
+    ap.add_argument("-o", "--out")
     ap.add_argument("-g", "--game")
     ap.add_argument("-f", "--format", default="mp3", choices=("mp3", "flac", "wav"))
     ap.add_argument("-l", "--lang", default="EN-US")
@@ -427,6 +454,8 @@ def main():
     if not game:
         die("CnCRemastered nicht gefunden.\n"
             "       Pfad per --game angeben oder CNC_REMASTERED_DIR setzen.")
+    if not args.out:
+        args.out = soundtrack_dir(game)
     data_dir = os.path.join(game, "Data")
     music_meg = os.path.join(data_dir, "MUSIC.MEG")
     config_meg = os.path.join(data_dir, "CONFIG.MEG")
