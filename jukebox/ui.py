@@ -17,7 +17,8 @@ import time
 
 from PyQt5.QtCore import QPoint, QRect, QRectF, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import (QBrush, QColor, QFont, QFontDatabase, QFontMetrics,
-                         QLinearGradient, QPainter, QPainterPath, QPen, QPixmap)
+                         QIcon, QLinearGradient, QPainter, QPainterPath, QPen,
+                         QPixmap)
 from PyQt5.QtWidgets import QWidget
 
 from .assets import Atlas, Textures
@@ -97,15 +98,18 @@ SKIN_SFX = {
     "td":     {"building": "TDR_SFX_EVA_BLDGING1",
                "complete": "TDR_SFX_EVA_CONSTRU1",
                "place":    "TDR_SFX_CONSTRU2",
-               "exit":     "TDR_SFX_EVA_BATLCON1"},
+               "exit":     "TDR_SFX_EVA_BATLCON1",
+               "thanks":   "TDR_SFX_EVA_ETHANKS"},
     "soviet": {"building": "RAR_SFX_EVA_ABLDGIN1",
                "complete": "RAR_SFX_EVA_CONSCMP1",
                "place":    "RAR_SFX_PLACBLDG",
-               "exit":     "RAR_SFX_EVA_BCT1"},
+               "exit":     "RAR_SFX_EVA_BCT1",
+               "thanks":   "RAR_SFX_EVA_THANKU1"},
     "allied": {"building": "RAR_SFX_EVA_ABLDGIN1",
                "complete": "RAR_SFX_EVA_CONSCMP1",
                "place":    "RAR_SFX_PLACBLDG",
-               "exit":     "RAR_SFX_EVA_BCT1"},
+               "exit":     "RAR_SFX_EVA_BCT1",
+               "thanks":   "RAR_SFX_EVA_THANKU1"},
 }
 SKIN_ORDER = ("soviet", "allied", "td")
 BUILD_SECONDS = 3.0
@@ -133,7 +137,8 @@ FASTENERS = {
                "shape": "hex", "folder": (0.11400, 0.07100, 0.01450)},
 }
 
-PROJECT_URL = "https://github.com/SoulInfernoDE/cnc-remastered-jukebox"
+PROJECT_URL = ("https://github.com/SoulInfernoDE/"
+               "cnc-remastered-jukebox/tree/gui")
 
 # "Soundbox" names a screen the game does not have, so there is no string for
 # it - it and the two hints below are the only text here not read out of the
@@ -261,8 +266,62 @@ class JukeboxWindow(QWidget):
         self.resize(1240, 930)
         self.setWindowTitle("%s - %s" % (data.text("TEXT_JUKEBOX", "Jukebox"),
                                          data.text("TEXT_JUKEBOX_PLAYLIST_EDITOR")))
+        self.setWindowIcon(self._build_icon())
 
     # -- setup -----------------------------------------------------------
+    def _build_icon(self):
+        """A jukebox cabinet in the current skin's colours, carrying the game's
+        own emblem.  The window is frameless, so this is what the task bar and
+        the window switcher show."""
+        icon = QIcon()
+        emblem = self.atlas.sprite(
+            TRACK_ICON["Tiberian_Dawn" if self.skin == "td" else "Red_Alert"])
+        for side in (32, 48, 64, 128, 256):
+            pm = QPixmap(side, side)
+            pm.fill(QColor(0, 0, 0, 0))
+            q = QPainter(pm)
+            q.setRenderHint(QPainter.Antialiasing, True)
+            q.setRenderHint(QPainter.SmoothPixmapTransform, True)
+            u = side / 32.0
+            body = QRectF(5 * u, 4 * u, 22 * u, 25 * u)
+
+            shell = QLinearGradient(body.left(), 0, body.right(), 0)
+            shell.setColorAt(0.0, QColor(38, 41, 44))
+            shell.setColorAt(0.5, QColor(126, 130, 134))
+            shell.setColorAt(1.0, QColor(46, 49, 52))
+            q.setPen(QPen(QColor(16, 17, 19), max(1.0, 1.2 * u)))
+            q.setBrush(QBrush(shell))
+            # Arched top, flat base: the shape a jukebox is known by.
+            path = QPainterPath()
+            path.moveTo(body.left(), body.bottom())
+            path.lineTo(body.left(), body.top() + body.height() * 0.34)
+            path.quadTo(body.center().x(), body.top() - body.height() * 0.12,
+                        body.right(), body.top() + body.height() * 0.34)
+            path.lineTo(body.right(), body.bottom())
+            path.closeSubpath()
+            q.drawPath(path)
+
+            screen = QRectF(body.left() + 3 * u, body.top() + 8.5 * u,
+                            body.width() - 6 * u, body.height() * 0.42)
+            q.setBrush(self.accent.darker(190))
+            q.setPen(QPen(QColor(14, 15, 17), max(1.0, 1.0 * u)))
+            q.drawRoundedRect(screen, 1.5 * u, 1.5 * u)
+            if emblem is not None and not emblem.isNull():
+                e = int(min(screen.width(), screen.height()) * 0.92)
+                q.drawImage(QRect(int(screen.center().x() - e / 2),
+                                  int(screen.center().y() - e / 2), e, e), emblem)
+            # Two speaker grilles under the screen.
+            q.setPen(Qt.NoPen)
+            q.setBrush(self.accent)
+            for k in (0, 1):
+                q.drawRoundedRect(
+                    QRectF(body.left() + (3 + k * 10) * u,
+                           screen.bottom() + 2 * u, 6 * u, 3.5 * u),
+                    1.0 * u, 1.0 * u)
+            q.end()
+            icon.addPixmap(pm)
+        return icon
+
     def _load_fonts(self):
         self.font_families = {}
         for key, path in FONTS.items():
@@ -457,6 +516,7 @@ class JukeboxWindow(QWidget):
         self._bg_cache = self._scan_cache = self._menu_cache = None
         self._sprite_cache = {}
         self._load_fonts()
+        self.setWindowIcon(self._build_icon())
         self.save()
         self.update()
 
@@ -1285,6 +1345,7 @@ class JukeboxWindow(QWidget):
         elif kind == "remove_all":
             self.playlist = []
         elif kind == "github":
+            self._play_sfx(self.skin, "thanks")
             subprocess.Popen(["xdg-open", PROJECT_URL],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         elif kind == "skin":

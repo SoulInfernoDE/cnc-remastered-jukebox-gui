@@ -65,6 +65,12 @@ null device without saying so. Tracks are decoded with ffmpeg and written to
 
 ## Using it
 
+The window is frameless, so only the jukebox itself is on screen — which is
+why it carries a drawn icon for the task bar and the window switcher: a
+jukebox cabinet in the current skin's colours, its screen showing that game's
+own emblem out of the atlas. It follows the skin, so changing the skin changes
+the icon too.
+
 The window is frameless, so only the jukebox itself is on screen. Drag it by
 any empty part of the panel; Escape or *Exit* closes it, F11 toggles
 fullscreen, Space toggles playback.
@@ -127,7 +133,10 @@ Tiberian Dawn's carries hex heads, sitting higher and further out, so the hover
 outline follows the shape and position each skin actually has — measured on the
 textures rather than assumed.
 
-- **Left fastener** — opens this project on GitHub.
+- **Left fastener** — opens this branch on GitHub, with EVA saying thank you
+  in that game's own voice. Like the other lines, the two games file it under
+  different stems: `EVA_ETHANKS` for Tiberian Dawn, `EVA_THANKU1` for Red
+  Alert.
 - **Folder** — opens the soundtrack folder, drawn in the current skin's colour.
   That is the same folder `cnc_trackexport` writes to by default.
 - **Right fastener** — changes the skin, the way the game puts up a building: the
