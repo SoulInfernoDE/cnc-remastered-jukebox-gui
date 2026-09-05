@@ -28,6 +28,8 @@ set -euo pipefail
 here="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 jukebox="$here/cnc-jukebox"
 
+log="${XDG_RUNTIME_DIR:-/tmp}/cnc-jukebox-companion.log"
+
 if [ ! -x "$jukebox" ]; then
     echo "cnc-jukebox not found at $jukebox" >&2
     exec "$@"
@@ -35,12 +37,19 @@ fi
 
 # Detached, so that music started from the row survives this script - and told
 # our pid, so that it closes itself if the launcher window is never found.
+#
+# Its output goes to a file rather than nowhere: when the row fails to appear
+# this is the only place that says why, and Steam shows none of it.
+{
+    echo "--- $(date '+%F %T') $jukebox --launcher-button"
+} >"$log" 2>/dev/null || log=/dev/null
+
 if command -v setsid >/dev/null 2>&1; then
     setsid "$jukebox" --launcher-button --launcher-pid $$ \
-        </dev/null >/dev/null 2>&1 &
+        </dev/null >>"$log" 2>&1 &
 else
     "$jukebox" --launcher-button --launcher-pid $$ \
-        </dev/null >/dev/null 2>&1 &
+        </dev/null >>"$log" 2>&1 &
 fi
 companion=$!
 

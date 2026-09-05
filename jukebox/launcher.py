@@ -340,7 +340,15 @@ class LauncherPanel(QWidget):
     launcherGone = pyqtSignal()
 
     POLL_MS = 300
-    PATIENCE_MS = 40000       # how long to wait for a launcher to turn up
+    # A cold Proton start can take a while - shader caches, a prefix being
+    # built - so the wait before giving up on a launcher is generous.  It
+    # costs nothing: where X cannot be asked at all, the row stands on its
+    # own straight away instead of waiting this out.
+    PATIENCE_MS = 90000
+    # And one missed look is not a departure.  A window can drop out of the
+    # desktop's list for a moment while it is being restacked or redrawn, and
+    # treating that as "the launcher is gone" would close the row for good.
+    MISSES = 4
 
     def __init__(self, art, icons, family, label="JUKEBOX", parent=None):
         super(LauncherPanel, self).__init__(parent)
@@ -350,6 +358,7 @@ class LauncherPanel(QWidget):
         self._hover = False
         self._seen = False
         self._waited = 0
+        self._missed = 0
         self._tied = 0
         self._drag = None
         self._moved = False
@@ -425,20 +434,25 @@ class LauncherPanel(QWidget):
         self._timer.stop()
 
     def _follow(self):
-        found = find_launcher() if xwin.available() else None
+        asking = xwin.available()
+        found = find_launcher() if asking else None
         if found is None:
-            if self._seen:                       # it was there and now is not
+            if self._seen:
+                self._missed += 1
+                if self._missed < self.MISSES:   # a flicker, not a departure
+                    return
                 self._timer.stop()
                 self.hide()
                 self.launcherGone.emit()
                 return
             self._waited += self.POLL_MS
-            if self._waited >= self.PATIENCE_MS and not self.isVisible():
+            if not self.isVisible() and (not asking
+                                         or self._waited >= self.PATIENCE_MS):
                 self.place_fallback()            # no launcher: stand on its own
                 self.show()
             return
         win, geo = found
-        self._seen = True
+        self._seen, self._missed = True, 0
         self.attach(geo)
         if not self.isVisible():
             self.show()
