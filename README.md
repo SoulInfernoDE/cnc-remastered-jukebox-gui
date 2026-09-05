@@ -68,8 +68,8 @@ null device without saying so. Tracks are decoded with ffmpeg and written to
 The window is frameless, so only the jukebox itself is on screen — which is
 why it carries a drawn icon for the task bar and the window switcher: a
 jukebox cabinet in the current skin's colours, its screen showing that game's
-own emblem out of the atlas. It follows the skin, so changing the skin changes
-the icon too.
+own emblem out of the atlas over two round speakers in the accent colour. It
+follows the skin, so changing the skin changes the icon too.
 
 The window is frameless, so only the jukebox itself is on screen. Drag it by
 any empty part of the panel; Escape or *Exit* closes it, F11 toggles
@@ -78,6 +78,10 @@ fullscreen, Space toggles playback.
 Left-click a track to select it, right-click to move it between the two lists,
 double-click to play. The four plate buttons, the filters, shuffle, the gap and
 volume sliders and the progress bar all behave as they do in the game.
+
+A second copy of the emblem sits to the right of the playback bar, mirroring
+the play button on the other side of it and turning off the same angle, so the
+two stay in step.
 
 The emblem of the track currently playing turns while it plays, as a struck
 token rather than a sheet of paper. Rotating a plane about its vertical axis
