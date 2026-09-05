@@ -152,14 +152,19 @@ FASTENERS = {
 PROJECT_URL = ("https://github.com/SoulInfernoDE/"
                "cnc-remastered-jukebox/tree/gui")
 
-# "Soundbox" names a screen the game does not have, so there is no string for
-# it - it and the two hints below are the only text here not read out of the
-# installation.  The destination's own name still comes from the string table
-# where one exists (TEXT_JUKEBOX is localised; in Russian it reads
-# "Музыкальный плеер"), so only the connecting words are ours.
+# "Soundbox" names a screen the game does not have, and neither does the
+# switch for our own button sounds, so there is no string for either - these
+# four are the only text here not read out of the installation, and outside
+# German they fall back to English.  The destination's own name still comes
+# from the string table where one exists (TEXT_JUKEBOX is localised; in
+# Russian it reads "Музыкальный плеер"), so only the connecting words are ours.
 SOUNDBOX_NAME = "Soundbox"
 SWITCH_HINT = {"DE-DE": "Zur %s wechseln",
                "EN-US": "Switch to the %s"}
+BUTTON_SFX_LABEL = {"DE-DE": "Button-Sounds",
+                    "EN-US": "Button sounds"}
+BUTTON_SFX_HINT = {"DE-DE": "Die eigenen Klänge der Knöpfe an- und abschalten",
+                   "EN-US": "Turn the buttons' own sounds on and off"}
 SLIDER_MINUS = "UI_OPTIONS_SLIDERBAR_MINUS.TGA"
 SLIDER_PLUS = "UI_OPTIONS_SLIDERBAR_PLUS.TGA"
 
@@ -172,6 +177,20 @@ FRAME_ASPECT = 2066 / 1552.0
 def config_path():
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
     return os.path.join(base, "cnc-jukebox", "playlist.json")
+
+
+def stored_skin(default="soviet"):
+    """The skin last chosen at the fastener, so it survives a restart.
+
+    Read before the window exists, because everything else - layout, textures,
+    fonts, window icon - is built from it.
+    """
+    try:
+        with open(config_path(), encoding="utf-8") as f:
+            name = json.load(f).get("skin")
+    except (OSError, ValueError):
+        return default
+    return name if name in SKIN_BUI else default
 
 
 def t_now():
@@ -211,10 +230,10 @@ class JukeboxWindow(QWidget):
 
     closed = pyqtSignal()
 
-    def __init__(self, data, skin="soviet", parent=None):
+    def __init__(self, data, skin=None, parent=None):
         super(JukeboxWindow, self).__init__(parent)
         self.data = data
-        self.skin = skin if skin in SKIN_BUI else "soviet"
+        self.skin = skin if skin in SKIN_BUI else stored_skin()
         self.accent = ACCENT[self.skin]
 
         self.layout_ = Layout(data.config.get(SKIN_BUI[self.skin]))
@@ -233,6 +252,7 @@ class JukeboxWindow(QWidget):
         self.filters = {"Tiberian_Dawn": True, "Red_Alert": True,
                         "Remaster": True, "Classic": False, "Bonus": True}
         self.shuffle = True
+        self.button_sfx = True             # the app's own button sounds
         self.gap = 0.0                     # seconds, 0..30
         self.volume = 0.8
         self.playlist = []                 # Track objects, in order
@@ -460,6 +480,7 @@ class JukeboxWindow(QWidget):
         self.filters.update({k: bool(v) for k, v in st.get("filters", {}).items()
                              if k in self.filters})
         self.shuffle = bool(st.get("shuffle", self.shuffle))
+        self.button_sfx = bool(st.get("button_sfx", self.button_sfx))
         self.gap = float(st.get("gap", self.gap))
         self.volume = float(st.get("volume", self.volume))
         self.player.set_volume(self.volume)
@@ -471,6 +492,7 @@ class JukeboxWindow(QWidget):
             with open(p, "w", encoding="utf-8") as f:
                 json.dump({"playlist": [t.filename for t in self.playlist],
                            "filters": self.filters, "shuffle": self.shuffle,
+                           "button_sfx": self.button_sfx, "skin": self.skin,
                            "gap": self.gap, "volume": self.volume}, f, indent=1)
         except OSError:
             pass
@@ -518,9 +540,12 @@ class JukeboxWindow(QWidget):
         self.update()
 
     def _play_sfx(self, skin, which):
+        """One of the app's own button sounds.  False when nothing played."""
         stem = SKIN_SFX.get(skin, {}).get(which)
-        if stem:
-            play_effect(self.data.sfx(stem), min(1.0, self.volume + 0.15))
+        if not stem or not self.button_sfx:
+            return False
+        play_effect(self.data.sfx(stem), min(1.0, self.volume + 0.15))
+        return True
 
     def _tick_build(self):
         b = self._build
@@ -1104,13 +1129,13 @@ class JukeboxWindow(QWidget):
         self.hits.append(Hit(rect, "apply", tip=self._switch_hint()))
 
     # -- options ---------------------------------------------------------
-    def _checkbox(self, p, rect, on, kind):
+    def _checkbox(self, p, rect, on, kind, tip=None):
         side = min(rect.width(), rect.height())
         box = QRect(rect.x(), rect.y() + (rect.height() - side) // 2, side, side)
         pm = self.sprite("check_on" if on else "check_off", side, side)
         if pm is not None:
             p.drawPixmap(box, pm)
-            self.hits.append(Hit(box, kind))
+            self.hits.append(Hit(box, kind, tip=tip))
             return
         p.setPen(QPen(QColor(20, 20, 20), 2))
         p.setBrush(QColor(self.accent) if on else QColor(70, 26, 26)
@@ -1123,7 +1148,7 @@ class JukeboxWindow(QWidget):
                        box.x() + side * 42 // 100, box.y() + side * 72 // 100)
             p.drawLine(box.x() + side * 42 // 100, box.y() + side * 72 // 100,
                        box.x() + side * 78 // 100, box.y() + side * 26 // 100)
-        self.hits.append(Hit(box, kind))
+        self.hits.append(Hit(box, kind, tip=tip))
 
     def _paint_options(self, p):
         t = self.data
@@ -1149,9 +1174,11 @@ class JukeboxWindow(QWidget):
                              icon.center().y() - side // 2, side, side), probe)
             self._text(p, label, t.text(txt), 0.0165, TEXT)
 
-        self._checkbox(p, self.r("shuffle_check"), self.shuffle, "shuffle")
-        self._text(p, self.r("shuffle_text"),
-                   t.text("TEXT_SHUFFLE_CUSTOM_PLAYLIST"), 0.0165, TEXT)
+        box, row = self.r("shuffle_check"), self.r("shuffle_text")
+        shuffle_label = t.text("TEXT_SHUFFLE_CUSTOM_PLAYLIST")
+        self._checkbox(p, box, self.shuffle, "shuffle")
+        self._text(p, row, shuffle_label, 0.0165, TEXT)
+        self._paint_button_sfx(p, box, row, shuffle_label)
 
         self._text(p, self.r("gap_text"),
                    "%s: %d %s" % (t.text("TEXT_AMBIENT_MUSIC_GAP_DELAY_SECONDS_LABEL"),
@@ -1163,6 +1190,31 @@ class JukeboxWindow(QWidget):
         self._text(p, self.r("volume_text"),
                    t.text("TEXT_VOLUME_JUKEBOX_MUSIC"), 0.0165, TEXT)
         self._slider(p, self.r("volume_slider"), self.volume, "volume")
+
+    def _paint_button_sfx(self, p, box, row, shuffle_label):
+        """A second checkbox sharing the shuffle row, past the end of its text.
+
+        The shuffle label is the only thing in the way, and none of the nine
+        translations comes near filling its generous rect - the widest, Polish,
+        uses a third of it.  So the box goes where the text actually stops
+        rather than where the layout says it may reach, and steps aside
+        entirely if a translation ever does need the room.
+        """
+        gap = max(4, row.x() - box.right())        # the game's own box-to-text air
+        used = min(QFontMetrics(self.font(0.0165)).horizontalAdvance(shuffle_label),
+                   row.width())
+        x = row.x() + used + box.width()
+        right = self.r("filters").right()
+        if right - x < box.width() * 3:
+            return
+        lang = self.data.language
+        cb = QRect(x, box.y(), box.width(), box.height())
+        self._checkbox(p, cb, self.button_sfx, "button_sfx",
+                       tip=BUTTON_SFX_HINT.get(lang, BUTTON_SFX_HINT["EN-US"]))
+        tx = cb.right() + gap
+        self._text(p, QRect(tx, row.y(), right - tx, row.height()),
+                   BUTTON_SFX_LABEL.get(lang, BUTTON_SFX_LABEL["EN-US"]),
+                   0.0165, TEXT)
 
     def _slider(self, p, rect, frac, kind):
         frac = max(0.0, min(1.0, frac))
@@ -1436,7 +1488,8 @@ class JukeboxWindow(QWidget):
         elif kind == "skin":
             self.start_skin_change()
         elif kind == "folder":
-            play_effect(self.data.sfx(FOLDER_SFX), min(1.0, self.volume + 0.15))
+            if self.button_sfx:
+                play_effect(self.data.sfx(FOLDER_SFX), min(1.0, self.volume + 0.15))
             self.open_track_folder()
         elif kind == "playpause":
             if self.current is None and self.playlist:
@@ -1448,6 +1501,8 @@ class JukeboxWindow(QWidget):
             self.scroll["playlist"] = 0.0
         elif kind == "shuffle":
             self.shuffle = not self.shuffle
+        elif kind == "button_sfx":
+            self.button_sfx = not self.button_sfx
         elif kind.startswith("filter:"):
             flag = kind.split(":", 1)[1]
             self.filters[flag] = not self.filters[flag]
@@ -1465,14 +1520,17 @@ class JukeboxWindow(QWidget):
             self.sel_object = h.data
             self._frame_i = 0.0
         elif kind == "apply":
-            # Writes the playlist and settings out now and stays open.  The
-            # window saves on close as well, so this is the deliberate
-            # "keep it, I am done editing" and says so for a moment.
+            # Left over from the game's Apply, which had nothing to do here:
+            # the window saves on close anyway.  It carries the screen switch
+            # instead, and is named after wherever it leads.
             self.toggle_mode()
         elif kind == "exit":
-            # Let EVA sign off before the window goes.
-            self._play_sfx(self.skin, "exit")
-            QTimer.singleShot(EXIT_DELAY_MS, self._finish_exit)
+            # Let EVA sign off before the window goes - unless she is muted,
+            # in which case there is nothing to wait for.
+            if self._play_sfx(self.skin, "exit"):
+                QTimer.singleShot(EXIT_DELAY_MS, self._finish_exit)
+            else:
+                self._finish_exit()
         self.update()
 
     def mouseDoubleClickEvent(self, ev):

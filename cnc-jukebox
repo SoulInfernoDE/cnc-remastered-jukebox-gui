@@ -17,8 +17,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("-g", "--game", help="game directory (default: autodetected)")
     ap.add_argument("-l", "--lang", help="EN-US, DE-DE, ... (default: system locale)")
-    ap.add_argument("-s", "--skin", default="soviet",
-                    choices=("soviet", "allied", "td"), help="which jukebox skin")
+    ap.add_argument("-s", "--skin", default=None,
+                    choices=("soviet", "allied", "td"),
+                    help="which jukebox skin (default: the one last chosen)")
     ap.add_argument("--fullscreen", action="store_true")
     ap.add_argument("--write-icon", metavar="PATH",
                     help="render the application icon to PATH and exit")
@@ -53,7 +54,9 @@ def main():
         QMessageBox.critical(None, "C&C Jukebox", str(e))
         return 1
 
-    from jukebox.ui import JukeboxWindow
+    from jukebox.ui import JukeboxWindow, stored_skin
+
+    args.skin = args.skin or stored_skin()
 
     if args.write_icon:
         # Drawn from the game's own emblem, so it needs a window to build it.

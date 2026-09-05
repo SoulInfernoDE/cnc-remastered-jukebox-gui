@@ -79,6 +79,16 @@ Left-click a track to select it, right-click to move it between the two lists,
 double-click to play. The four plate buttons, the filters, shuffle, the gap and
 volume sliders and the progress bar all behave as they do in the game.
 
+Beside shuffle sits **Button sounds**, which is ours rather than the game's: it
+silences the jukebox's own button audio — the sign-off, the thank-you, the
+folder sting, the screen switch and the whole skin-change sequence — while
+leaving the music and the sound box's previews alone, since those are the
+point rather than the trimming. With it off, *Exit* closes at once instead of
+waiting for EVA. The row has space for it because none of the nine
+translations of "shuffle" comes near filling its rect — Polish, the widest,
+uses a third — so the box goes where that text actually stops, and steps aside
+if a translation ever needs the room.
+
 A second copy of the emblem sits to the right of the playback bar, mirroring
 the play button on the other side of it and turning off the same angle, so the
 two stay in step.
@@ -96,8 +106,10 @@ the silhouette's centroid stays within 5 px of the axis and never moves more
 than 1 px per 5 degrees; what remains is the emblem's own asymmetry, which a
 real object would show too.
 
-The playlist, filters, volume and chosen skin are kept in
-`~/.config/cnc-jukebox/playlist.json`.
+The playlist, filters, volume, button sounds and chosen skin are kept in
+`~/.config/cnc-jukebox/playlist.json`; the skin is read back before the window
+is built, since the layout, textures, fonts and icon all come from it. `--skin`
+still overrides it for one run.
 
 **Exit** closes the jukebox, with EVA signing off in that game's own voice.
 The button beside it switches screens and is named after where it leads:
@@ -106,8 +118,9 @@ in that game's own voice — EVA reporting new build options on the way in, the
 commando's "rock and roll" on the way back to the music. The playlist and
 settings are written on close either way.
 
-"Soundbox" names a screen the game does not have, so it and the two hover
-hints are the only text here not read out of the installation. The
+"Soundbox" names a screen the game does not have, and neither does a switch
+for our own button sounds, so those four strings are the only text here not
+read out of the installation; outside German they fall back to English. The
 destination's own name still comes from the string table where one exists —
 `TEXT_JUKEBOX` is localised, and reads "Музыкальный плеер" in Russian.
 
