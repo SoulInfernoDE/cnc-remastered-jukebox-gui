@@ -58,6 +58,22 @@ Fenster eines anderen Programms steht; dort weicht die Zeile nach einer
 Wartezeit in die untere rechte Bildschirmecke aus und lässt sich mit Escape
 schließen.
 
+## Ausprobieren ohne Steam
+
+Der echte Launcher kommt nur über Steam und Proton hoch, was das Betrachten der
+Zeile während der Arbeit daran umständlich macht. Deshalb gibt es einen
+Stellvertreter:
+
+```bash
+./tools/mock-launcher
+```
+
+Er öffnet ein Fenster mit Titel, Größe und Grafiken des Launchers — aus der
+installierten Anwendung gelesen, nicht hier mitgeliefert — und startet die
+Zeile dagegen. Zieh das Fenster, und die Zeile folgt; schließ es, und die Zeile
+geht im selben Moment. Öffne vorher die Jukebox über die Zeile, dann spielt sie
+weiter, wenn beide fort sind.
+
 ## Es bringt Steam nicht durcheinander
 
 Der Wrapper führt Steams eigenen Befehl unverändert aus und wartet auf ihn.

@@ -53,6 +53,20 @@ This needs X11. Under a Wayland session nothing can ask where another
 program's window is, and the row falls back to the bottom-right corner of the
 screen after waiting; Escape closes it there.
 
+## Trying it without Steam
+
+The real launcher only comes up through Steam and Proton, which makes the row
+awkward to look at while working on it. So there is a stand-in:
+
+```bash
+./tools/mock-launcher
+```
+
+It opens a window with the launcher's title, size and artwork — read from the
+installed executable, not shipped here — and starts the row against it. Drag
+the window and the row follows; close it and the row goes in the same moment.
+Open the jukebox from the row first, and it keeps playing after both are gone.
+
 ## It does not disturb Steam
 
 The wrapper runs Steam's own command unchanged and waits for it, so Steam keeps

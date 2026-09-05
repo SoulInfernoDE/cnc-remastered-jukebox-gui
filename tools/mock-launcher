@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Stands in for the game's launcher window, so the Jukebox row can be tried.
+
+The real launcher is a Windows binary that only Steam and Proton bring up.
+This opens a window with the same title, the same size and the same artwork -
+read from the installed ClientLauncherG.exe, not shipped here - and starts the
+companion against it, which is exactly the situation the row is built for.
+
+    tools/mock-launcher            # window plus the Jukebox row under it
+    tools/mock-launcher --bare     # just the window, start the row yourself
+
+Close the window and the row should go with it, in the same moment.  Open the
+jukebox from the row first and it should keep playing after the window is gone.
+"""
+
+import argparse
+import os
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, HERE)
+
+TITLE = "Command & Conquer(TM) Remastered Collection Launcher"
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("-g", "--game", help="game directory (default: autodetected)")
+    ap.add_argument("--bare", action="store_true",
+                    help="do not start the Jukebox row alongside")
+    ap.add_argument("--at", default="320,120", metavar="X,Y",
+                    help="where to put the window (default: 320,120)")
+    args = ap.parse_args()
+
+    from PyQt5.QtWidgets import QApplication, QWidget
+    from PyQt5.QtGui import QPainter
+    from PyQt5.QtCore import Qt
+    from jukebox.gamedata import find_game_dir, GameDataError
+    from jukebox.launcher import BASE_SIZE, LauncherArt
+
+    game = args.game or find_game_dir()
+    if not game:
+        sys.stderr.write("Error: game directory not found; pass --game.\n")
+        return 1
+    app = QApplication(sys.argv)
+    art = LauncherArt(game)
+    if not art.available:
+        sys.stderr.write("Error: no bitmaps in %s\n" % art.path)
+        return 1
+
+    class Mock(QWidget):
+        def __init__(self):
+            super(Mock, self).__init__()
+            self.bg = art.part("background")
+            self.setWindowTitle(TITLE)
+            self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+            self.setFixedSize(*BASE_SIZE)
+
+        def paintEvent(self, _):
+            p = QPainter(self)
+            p.drawImage(0, 0, self.bg)
+            p.end()
+
+        def mousePressEvent(self, ev):
+            self._drag = ev.globalPos() - self.frameGeometry().topLeft()
+
+        def mouseMoveEvent(self, ev):
+            if getattr(self, "_drag", None):
+                self.move(ev.globalPos() - self._drag)   # drag it: the row follows
+
+        def keyPressEvent(self, ev):
+            if ev.key() == Qt.Key_Escape:
+                self.close()
+
+    win = Mock()
+    win.show()
+    try:
+        x, y = (int(v) for v in args.at.split(","))
+        win.move(x, y)
+    except ValueError:
+        pass
+
+    child = None
+    if not args.bare:
+        child = subprocess.Popen(
+            [os.path.join(HERE, "cnc-jukebox"), "--launcher-button",
+             "--launcher-pid", str(os.getpid())]
+            + (["--game", args.game] if args.game else []))
+    print("Mock launcher up. Drag it, and close it or press Escape to finish.")
+    rc = app.exec_()
+    # Leave the companion alone: closing this window is what it watches for,
+    # and a jukebox opened from the row is meant to outlive both of us.
+    if child is not None and child.poll() is None:
+        print("Companion still running - it keeps a playing jukebox alive.")
+    return rc
+
+
+if __name__ == "__main__":
+    sys.exit(main())
