@@ -115,7 +115,11 @@ still overrides it for one run.
 in English where the local recording is blank. Tiberian Dawn's "battle control
 terminated" was never recorded in German: the file ships all the same, holding
 a quarter-second of room tone at 19 RMS where the real lines sit between 3400
-and 7900, so that skin's Exit button used to close in silence. Any clip
+and 7900, so that skin's Exit button used to close in silence. The game says
+as much itself — the German `TEXT_SFX_TDC_SFX_BATLCON1` reads `empty` where
+every other language carries the sentence. It is one specific gap rather than
+a missing voice pack: of Tiberian Dawn's 136 German EVA lines exactly two are
+blank, and they are the classic and remastered takes of that one line. Any clip
 measuring under 200 RMS is replaced by the English one, which is also what
 happens when Steam has not downloaded the voice pack for the language you are
 running in. The measurement is free: it happens on the worker thread that was
