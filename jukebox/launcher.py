@@ -16,6 +16,7 @@ installation, exactly as the textures and fonts are.
 """
 
 import os
+import re
 import struct
 
 from PyQt5.QtCore import QRect, Qt, QTimer, pyqtSignal
@@ -144,10 +145,17 @@ def _decode_dib(dib):
 LAYOUT = {"td": (22, 278), "ra": (283, 278),
           "editor": (22, 494), "close": (524, 10)}
 BASE_SIZE = (560, 616)
+ASPECT = BASE_SIZE[0] / float(BASE_SIZE[1])
 
-# The window the launcher opens, by title.  Both of its strings start this
-# way, and the localised builds keep the English product name.
-LAUNCHER_TITLE = r"Command\s*&\s*Conquer.*Remastered"
+# Which window on screen is the launcher's.  Not the title: it sets
+# "CnCRemastered", the collection's name rather than the launcher's, and the
+# game beside it answers to the same one - both windows even carry the same
+# WM_CLASS, steam_app_1213210.  What separates them is the process, which
+# Proton names after the Windows executable, so /proc/<pid>/comm reads
+# "ClientLauncherG" for one and "ClientG" for the other.
+LAUNCHER_PROCESS = "clientlauncherg"
+LAUNCHER_TITLE = r"^CnCRemastered$|Command\s*&\s*Conquer.*Remastered"
+ASPECT_TOL = 0.06
 
 # The Map Editor slot is the shape this project borrows: a full-width row at
 # the foot of the panel.  Its row runs y 494..593 of the 560x616 background,
@@ -174,6 +182,32 @@ BAND = (430, 62, 70, 33)
 # slot's own greyscale by this tint lands on 85 - inside the family the
 # launcher already established, rather than shouting past it.
 GREEN = QColor(170, 255, 170)
+
+
+def launcher_shaped(geo):
+    """Does this window have the launcher's proportions, 560 by 616?"""
+    w, h = geo[2], geo[3]
+    return h > 0 and abs(w / float(h) - ASPECT) <= ASPECT_TOL
+
+
+def find_launcher():
+    """The launcher window's rectangle on screen, or None.
+
+    The process is asked first, because it answers without ambiguity.  Where
+    the desktop reports no pid, the title has to do, and then the window's
+    proportions are the guard - the game is never that shape.
+    """
+    fallback = None
+    for title, pid, geo in xwin.windows():
+        name = xwin.process_name(pid).lower()
+        if name:
+            if name == LAUNCHER_PROCESS:
+                return geo
+            continue          # a known process that is not it, title or not
+        if fallback is None and re.search(LAUNCHER_TITLE, title, re.I) \
+                and launcher_shaped(geo):
+            fallback = geo
+    return fallback
 
 
 def green_slot(art, hovered=False):
@@ -363,7 +397,7 @@ class LauncherPanel(QWidget):
         self._timer.stop()
 
     def _follow(self):
-        geo = xwin.find_window(LAUNCHER_TITLE) if xwin.available() else None
+        geo = find_launcher() if xwin.available() else None
         if geo is None:
             if self._seen:                       # it was there and now is not
                 self._timer.stop()
@@ -382,12 +416,19 @@ class LauncherPanel(QWidget):
             self.raise_()
 
     def attach(self, geo):
-        """Sit on the launcher's bottom frame, so the two look like one window."""
+        """Sit on the launcher's bottom frame, so the two look like one window.
+
+        The window is slightly taller than the artwork inside it - 618 against
+        616 on the one measured here, a pixel of border above and below - so
+        the scale is taken from the width, which has no border, and the
+        artwork is assumed to be centred in whatever height is left over.
+        """
         x, y, w, h = geo
         scale = max(0.5, min(3.0, w / float(BASE_SIZE[0])))
-        ph = int(round(PANEL_H * scale))
-        self.setFixedSize(w, ph)
-        self.move(x, y + h - int(round(CAP_H * scale)))
+        art_h = BASE_SIZE[1] * scale
+        top = y + (h - art_h) / 2.0 + art_h - CAP_H * scale
+        self.setFixedSize(w, int(round(PANEL_H * scale)))
+        self.move(x, int(round(top)))
 
     def place_fallback(self):
         """Bottom-right of the screen, for when the launcher cannot be found."""

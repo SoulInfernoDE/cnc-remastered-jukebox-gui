@@ -12,6 +12,7 @@ fixed position there.
 
 import ctypes
 import ctypes.util
+import os
 import re
 
 Atom = ctypes.c_ulong
@@ -126,6 +127,14 @@ class _X(object):
         self.lib.XFree(data)
         return raw, n, fmt.value
 
+    def pid(self, win):
+        """The process that owns the window, if it says so."""
+        raw, n, fmt = self.prop(win, "_NET_WM_PID", _XA_CARDINAL)
+        if not raw or not n:
+            return 0
+        step = ctypes.sizeof(ctypes.c_long) if fmt == 32 else 4
+        return int.from_bytes(raw[:step], "little")
+
     def title(self, win):
         raw, n, _ = self.prop(win, "_NET_WM_NAME", 0)
         if raw:
@@ -223,18 +232,44 @@ def available():
     return _display() is not None
 
 
-def find_window(pattern):
-    """(x, y, w, h) of the first mapped window whose title matches, or None."""
+def process_name(pid):
+    """What the process is called, as far as /proc will say.
+
+    Under Proton this is the Windows executable's own name: the launcher
+    reports "ClientLauncherG", which is what identifies its window past any
+    doubt - its title is only "CnCRemastered", which the game itself may
+    equally use.
+    """
+    if not pid:
+        return ""
+    try:
+        with open("/proc/%d/comm" % pid) as f:
+            name = f.read().strip()
+    except OSError:
+        return ""
+    return os.path.splitext(name)[0]
+
+
+def windows():
+    """[(title, pid, (x, y, w, h))] for every window currently on screen."""
     x = _display()
     if x is None:
-        return None
-    rx = re.compile(pattern, re.I)
+        return []
+    out = []
     for win in x.clients():
         try:
-            if rx.search(x.title(win)):
-                geo = x.geometry(x.framed(win))
-                if geo and geo[2] > 1 and geo[3] > 1:
-                    return geo
+            geo = x.geometry(x.framed(win))
+            if geo and geo[2] > 1 and geo[3] > 1:
+                out.append((x.title(win), x.pid(win), geo))
         except Exception:
             continue
+    return out
+
+
+def find_window(pattern):
+    """(x, y, w, h) of the first mapped window whose title matches, or None."""
+    rx = re.compile(pattern, re.I)
+    for title, _pid, geo in windows():
+        if rx.search(title):
+            return geo
     return None

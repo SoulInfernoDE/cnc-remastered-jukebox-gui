@@ -3,9 +3,15 @@
 """Stands in for the game's launcher window, so the Jukebox row can be tried.
 
 The real launcher is a Windows binary that only Steam and Proton bring up.
-This opens a window with the same title, the same size and the same artwork -
-read from the installed ClientLauncherG.exe, not shipped here - and starts the
-companion against it, which is exactly the situation the row is built for.
+This opens a window with the same title, size and artwork - read from the
+installed ClientLauncherG.exe, not shipped here - and starts the companion
+against it.
+
+Measured on a running launcher: the window is 560x618 and titled
+"CnCRemastered", with its 560x616 of artwork one pixel down from the top.  It
+answers to the launcher's process name too, since that is what the companion
+goes by - Proton names the process after the Windows executable, and prctl
+lets this one say the same thing.
 
     tools/mock-launcher            # window plus the Jukebox row under it
     tools/mock-launcher --bare     # just the window, start the row yourself
@@ -22,7 +28,20 @@ import sys
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 
-TITLE = "Command & Conquer(TM) Remastered Collection Launcher"
+TITLE = "CnCRemastered"           # what the real one puts in WM_NAME
+BORDER = 1                        # the artwork sits this far into the window
+PROCESS = b"ClientLauncherG"      # what Proton calls the real one, to the byte
+PR_SET_NAME = 15
+
+
+def rename_process():
+    """Answer to the launcher's name, which is what the companion looks for."""
+    try:
+        import ctypes
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(
+            PR_SET_NAME, ctypes.c_char_p(PROCESS), 0, 0, 0)
+    except Exception:
+        pass                      # then the title fallback has to carry it
 
 
 def main():
@@ -44,6 +63,7 @@ def main():
     if not game:
         sys.stderr.write("Error: game directory not found; pass --game.\n")
         return 1
+    rename_process()
     app = QApplication(sys.argv)
     art = LauncherArt(game)
     if not art.available:
@@ -56,11 +76,12 @@ def main():
             self.bg = art.part("background")
             self.setWindowTitle(TITLE)
             self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
-            self.setFixedSize(*BASE_SIZE)
+            self.setFixedSize(BASE_SIZE[0], BASE_SIZE[1] + 2 * BORDER)
 
         def paintEvent(self, _):
             p = QPainter(self)
-            p.drawImage(0, 0, self.bg)
+            p.fillRect(self.rect(), Qt.black)
+            p.drawImage(0, BORDER, self.bg)
             p.end()
 
         def mousePressEvent(self, ev):

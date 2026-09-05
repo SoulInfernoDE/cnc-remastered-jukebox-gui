@@ -48,6 +48,20 @@ unteren Rahmen, in seiner Breite und in seinem Maßstab. Die Naht verschwindet,
 und beides liest sich als ein einziges Fenster. Verschiebst du den Launcher,
 zieht die Zeile dreimal je Sekunde nach.
 
+Dieses Fenster zu finden erfordert etwas Sorgfalt. Sein Titel lautet
+`CnCRemastered` — der Name der Sammlung, nicht der des Launchers — und das
+Spiel daneben hört auf denselben; beide tragen sogar dieselbe `WM_CLASS`,
+`steam_app_1213210`. Was sie trennt, ist der Prozess: Proton benennt ihn nach
+der Windows-Anwendung, `/proc/<pid>/comm` liest also für das eine
+`ClientLauncherG` und für das andere `ClientG`. Daran hält sich die Zeile; der
+Titel und die Fensterproportionen sind nur der Rückfall für Arbeitsumgebungen,
+die keine Prozessnummer melden.
+
+Das Fenster ist außerdem eine Spur höher als die Grafik darin — 560×618 gegen
+560×616, je ein Pixel Rand oben und unten. Der Maßstab kommt deshalb aus der
+Breite, die keinen Rand hat, und die Grafik gilt als mittig in der übrigen
+Höhe.
+
 Verschwindet der Launcher — weil ein Spiel gewählt oder das Fenster einfach
 geschlossen wurde — verschwindet die Zeile im selben Moment mit. Eine zuvor
 darüber geöffnete Jukebox läuft weiter: deshalb wird der Begleiter in einer

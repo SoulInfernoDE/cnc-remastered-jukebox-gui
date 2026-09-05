@@ -44,6 +44,19 @@ actually on screen, then places itself over its bottom frame, at its width and
 scaled to it. The seam disappears and the two read as a single window. Move the
 launcher and the row moves with it, three times a second.
 
+Finding that window takes some care. Its title is `CnCRemastered` — the
+collection's name, not the launcher's — and the game beside it answers to the
+same one; both even carry the same `WM_CLASS`, `steam_app_1213210`. What
+separates them is the process: Proton names it after the Windows executable, so
+`/proc/<pid>/comm` reads `ClientLauncherG` for one and `ClientG` for the other.
+That is what the row goes by, with the title and the window's proportions as a
+fallback for desktops that report no pid.
+
+The window is also a shade taller than the artwork it draws — 560×618 against
+560×616, a pixel of border above and below — so the scale comes from the width,
+which has none, and the artwork is taken to be centred in the height that is
+left.
+
 When the launcher goes — a game was picked, or the window was simply closed —
 the row goes with it, in the same moment. A jukebox opened from it keeps
 playing: that is why the companion is started in its own session rather than
