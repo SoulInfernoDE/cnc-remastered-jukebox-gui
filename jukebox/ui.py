@@ -134,6 +134,15 @@ FASTENERS = {
 }
 
 PROJECT_URL = "https://github.com/SoulInfernoDE/cnc-remastered-jukebox"
+
+# "Soundbox" names a screen the game does not have, so there is no string for
+# it - it and the two hints below are the only text here not read out of the
+# installation.  The destination's own name still comes from the string table
+# where one exists (TEXT_JUKEBOX is localised; in Russian it reads
+# "Музыкальный плеер"), so only the connecting words are ours.
+SOUNDBOX_NAME = "Soundbox"
+SWITCH_HINT = {"DE-DE": "Zur %s wechseln",
+               "EN-US": "Switch to the %s"}
 SLIDER_MINUS = "UI_OPTIONS_SLIDERBAR_MINUS.TGA"
 SLIDER_PLUS = "UI_OPTIONS_SLIDERBAR_PLUS.TGA"
 
@@ -850,30 +859,26 @@ class JukeboxWindow(QWidget):
         return hit
 
     def _paint_spinning_emblem(self, p, box, pm, deg):
-        """Turns the emblem about its vertical axis as a solid, struck token.
+        """Turns the emblem about its own central axis as a solid, struck token.
 
         Rotating a plane by theta about Y and projecting orthographically puts
-        a point (x, z) at screen x*cos(theta) + z*sin(theta).  The token spans
-        z from 0 (front face) to -T (back face), so:
+        a point (x, z) at screen x*cos(theta) + z*sin(theta).  The axis runs
+        through the middle of the material, so z spans -T/2 to +T/2 rather
+        than hanging off one face: the two faces land at +-T/2*sin(theta), the
+        silhouette stays centred on the axis, and the token turns in place
+        instead of swinging from side to side.
 
-          * the front face keeps its centre at 0,
-          * the back face's centre sits at -T*sin(theta),
-          * the material fills the span between the two,
-          * and the face we actually see is the front while cos(theta) > 0 and
-            the back once it turns negative - at which point it is both
-            mirrored and offset, and the draw order reverses because the back
-            plane has come nearer than the front.
-
-        Deriving the offset and the ordering from the same angle is what makes
-        this read as one continuous turn.  Scaling the face alone does not: the
-        face would mirror at 90 degrees while the body only changed sides at
-        180, and the eye reads that mismatch as a wobble rather than a spin.
+        Which face is visible follows the same angle - depth for a point on
+        the axis is z*cos(theta), so the near plane flips with the sign of cos.
+        At that moment the visible face is both mirrored and moved to the other
+        offset, and the slices are drawn in the reverse order.  Deriving all of
+        it from the one angle is what makes it read as a single continuous
+        turn rather than a wobble.
         """
         rad = math.radians(deg)
         c, sn = math.cos(rad), math.sin(rad)
         w, h = box.width(), box.height()
-        thick = max(2.5, w * EMBLEM_THICKNESS)
-        back_x = -thick * sn                 # where the far face lands
+        half = max(1.5, w * EMBLEM_THICKNESS * 0.5)
         squeeze = c if abs(c) > EMBLEM_MIN_FACE else (
             EMBLEM_MIN_FACE if c >= 0 else -EMBLEM_MIN_FACE)
 
@@ -892,17 +897,15 @@ class JukeboxWindow(QWidget):
 
         body = self._tinted(pm, EMBLEM_BODY)
         edge = self._tinted(pm, EMBLEM_EDGE)
-        layers = max(4, int(abs(back_x) * 1.6))
-        showing_back = c < 0
-        face_x = back_x if showing_back else 0.0
-        # Slices from the far plane to the near one.  Which plane is far
-        # depends on the sign of cos, so the sweep reverses with it.
-        steps = [i / float(layers) for i in range(layers, -1, -1)]
-        if showing_back:
-            steps.reverse()
-        for k, t in enumerate(steps):
-            slab(back_x * t, edge if k == len(steps) - 1 else body)
-        slab(face_x, pm, 0.80 + 0.20 * abs(c))
+        depth = abs(sn) * half * 2.0
+        layers = max(4, int(depth * 1.6))
+        near_z = half if c >= 0 else -half        # the plane facing us
+        far_z = -near_z
+        for i in range(layers + 1):
+            t = i / float(layers)
+            z = far_z + (near_z - far_z) * t
+            slab(z * sn, edge if i == layers else body)
+        slab(near_z * sn, pm, 0.80 + 0.20 * abs(c))
         p.restore()
 
     def _paint_scrollbar(self, p, which, content_h, view_h):
@@ -953,16 +956,25 @@ class JukeboxWindow(QWidget):
             self._plate(p, rect, t.text(txt).strip())
             self.hits.append(Hit(rect, kind))
 
+    def _switch_label(self):
+        """What the mode button leads to: the other screen's own name."""
+        if self.mode == "sounds":
+            return self.data.text("TEXT_JUKEBOX", "Jukebox")
+        return SOUNDBOX_NAME
+
+    def _switch_hint(self):
+        pattern = SWITCH_HINT.get(self.data.language, SWITCH_HINT["EN-US"])
+        return pattern % self._switch_label()
+
     def _paint_footer(self, p):
         t = self.data
-        for key, kind, txt, tip in (
-                ("btn_cancel", "exit", "TEXT_EXIT", None),
-                ("btn_apply", "apply",
-                 "TEXT_BACK" if self.mode == "sounds" else "TEXT_APPLY",
-                 t.text("TEXT_OPTIONS_AUDIO_SFX", "Audio"))):
-            rect = self.r(key)
-            self._plate(p, rect, t.text(txt))
-            self.hits.append(Hit(rect, kind, tip=tip))
+        rect = self.r("btn_cancel")
+        self._plate(p, rect, t.text("TEXT_EXIT"))
+        self.hits.append(Hit(rect, "exit"))
+
+        rect = self.r("btn_apply")
+        self._plate(p, rect, self._switch_label())
+        self.hits.append(Hit(rect, "apply", tip=self._switch_hint()))
 
     # -- options ---------------------------------------------------------
     def _checkbox(self, p, rect, on, kind):

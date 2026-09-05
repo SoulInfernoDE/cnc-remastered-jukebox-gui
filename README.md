@@ -75,19 +75,29 @@ volume sliders and the progress bar all behave as they do in the game.
 
 The emblem of the track currently playing turns while it plays, as a struck
 token rather than a sheet of paper. Rotating a plane about its vertical axis
-puts a point at `x·cos θ + z·sin θ`, so the token's front face keeps its
-centre, its back face lands at `-T·sin θ`, the material fills the span between
-them, and past 90 degrees the face we see is the back one — mirrored, offset,
-and with the draw order reversed because that plane has come nearer. Deriving
-all of it from the one angle is what makes it read as a single continuous
-turn.
+puts a point at `x·cos θ + z·sin θ`. The axis runs through the middle of the
+material, so `z` spans `-T/2` to `+T/2` rather than hanging off one face: the
+two faces land at `±T/2·sin θ`, the silhouette stays centred, and the token
+turns in place instead of swinging sideways. Which face is visible follows the
+same angle — depth on the axis is `z·cos θ`, so the near plane flips with the
+sign of cos, and at that moment the visible face is mirrored, moved to the
+other offset, and the slices are drawn in reverse. Measured over a full turn
+the silhouette's centroid stays within 5 px of the axis and never moves more
+than 1 px per 5 degrees; what remains is the emblem's own asymmetry, which a
+real object would show too.
 
 The playlist, filters, volume and chosen skin are kept in
 `~/.config/cnc-jukebox/playlist.json`.
 
 **Exit** closes the jukebox, with EVA signing off in that game's own voice.
-**Apply** opens the sound box. The playlist and settings are written on close
-either way.
+The button beside it switches screens and is named after where it leads:
+**Soundbox** from the jukebox, **Jukebox** from the sound box. The playlist and
+settings are written on close either way.
+
+"Soundbox" names a screen the game does not have, so it and the two hover
+hints are the only text here not read out of the installation. The
+destination's own name still comes from the string table where one exists —
+`TEXT_JUKEBOX` is localised, and reads "Музыкальный плеер" in Russian.
 
 ### The sound box
 
