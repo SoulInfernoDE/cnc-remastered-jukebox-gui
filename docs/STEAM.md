@@ -36,6 +36,12 @@ metal bevel stays exactly the pixels the launcher drew.
 In front of the label sit the three app icons — Tiberian Dawn, Soviet, Allied —
 overlapping left to right, the same cabinet the jukebox uses in the task bar.
 
+Hovering follows the launcher's own pattern, which is two things at once: the
+noise brightens — that comes from the game's hovered copy of the slot — and the
+lettering leaves white for the slot's own colour. The Map Editor's goes to
+(96, 189, 254); this one takes that blue's saturation and value at hue 120, so
+the word turns green.
+
 ## It follows the launcher
 
 The launcher window cannot be asked anything: it is a Windows binary under
@@ -52,15 +58,26 @@ separates them is the process: Proton names it after the Windows executable, so
 That is what the row goes by, with the title and the window's proportions as a
 fallback for desktops that report no pid.
 
-The window is also a shade taller than the artwork it draws — 560×618 against
-560×616, a pixel of border above and below — so the scale comes from the width,
-which has none, and the artwork is taken to be centred in the height that is
-left.
+Where exactly it sits was measured rather than assumed, by sliding the
+launcher's own bitmaps over a screenshot of it until they fit: the window is
+560×618, it stretches its 560×616 background over the whole of that, and the
+Map Editor row lands at x 24..538, y 490..588 — four pixels above where the
+background's recess suggests. So the row begins 29 pixels above the foot of the
+window, which is where that slot really ends. Anchoring to the background
+instead left four rows of it showing through, and the extra edge made the two
+windows look stacked rather than joined.
 
-When the launcher goes — a game was picked, or the window was simply closed —
-the row goes with it, in the same moment. A jukebox opened from it keeps
-playing: that is why the companion is started in its own session rather than
-killed on the way out.
+The row does not float above everything. It is tied to the launcher with the
+same hint a dialog uses on the window it belongs to, so the desktop keeps it
+just above that and nowhere else: bring another application forward and the
+row disappears behind it exactly as the launcher does. Where a desktop ignores
+the hint, the stacking order is checked instead, and the row is lifted only
+when the launcher itself has come out on top.
+
+When the launcher goes — a game was picked, the window was closed, or it was
+merely minimised — the row goes with it, in the same moment. A jukebox opened
+from it keeps playing: that is why the companion is started in its own session
+rather than killed on the way out.
 
 This needs X11. Under a Wayland session nothing can ask where another
 program's window is, and the row falls back to the bottom-right corner of the

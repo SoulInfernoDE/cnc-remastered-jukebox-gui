@@ -82,6 +82,8 @@ class _X(object):
             ctypes.c_void_p, Window, Window, ctypes.c_int, ctypes.c_int,
             ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
             ctypes.POINTER(Window)]
+        lib.XSetTransientForHint.argtypes = [ctypes.c_void_p, Window, Window]
+        lib.XFlush.argtypes = [ctypes.c_void_p]
         lib.XGetWindowAttributes.restype = ctypes.c_int
         lib.XGetWindowAttributes.argtypes = [ctypes.c_void_p, Window,
                                              ctypes.POINTER(_Attrs)]
@@ -142,15 +144,27 @@ class _X(object):
         raw, n, _ = self.prop(win, "WM_NAME", _XA_STRING)
         return raw.decode("latin-1", "replace") if raw else ""
 
+    def _window_list(self, name):
+        root = self.lib.XDefaultRootWindow(self.dpy)
+        raw, n, _ = self.prop(root, name, _XA_WINDOW)
+        if not raw or not n:
+            return None
+        step = ctypes.sizeof(ctypes.c_long)
+        return [int.from_bytes(raw[i * step:(i + 1) * step], "little")
+                for i in range(n)]
+
+    def stacking(self):
+        """Top-level windows from the bottom of the pile upwards, or []."""
+        return self._window_list("_NET_CLIENT_LIST_STACKING") or []
+
     def clients(self):
-        """Every top-level window, however the desktop chooses to say so."""
+        """Every window currently on screen, however the desktop says so."""
         root = self.lib.XDefaultRootWindow(self.dpy)
         for name in ("_NET_CLIENT_LIST", "_NET_CLIENT_LIST_STACKING"):
-            raw, n, _ = self.prop(root, name, _XA_WINDOW)
-            if raw and n:
-                step = ctypes.sizeof(ctypes.c_long)
-                return [int.from_bytes(raw[i * step:(i + 1) * step], "little")
-                        for i in range(n)]
+            wins = self._window_list(name)
+            if wins:
+                # Minimised windows stay in the list; on screen they are not.
+                return [w for w in wins if self.viewable(w)]
         # No window manager, or one that keeps no list: every child of the
         # root is a candidate, but only the mapped ones are on screen.
         return [w for w in self.children(root) if self.viewable(w)]
@@ -232,6 +246,44 @@ def available():
     return _display() is not None
 
 
+def stacking():
+    x = _display()
+    return x.stacking() if x is not None else []
+
+
+def keep_above(win, parent):
+    """Tie one window to another, so the desktop keeps it just above.
+
+    This is what a dialog does to the window it belongs to, and it is the
+    behaviour wanted here: above the launcher, below everything else, and
+    gone from the screen when the launcher is.
+    """
+    x = _display()
+    if x is None:
+        return False
+    try:
+        x.lib.XSetTransientForHint(x.dpy, Window(win), Window(parent))
+        x.lib.XFlush(x.dpy)
+        return True
+    except Exception:
+        return False
+
+
+def find_window_id(pattern):
+    """The window id whose title matches, or 0."""
+    x = _display()
+    if x is None:
+        return 0
+    rx = re.compile(pattern, re.I)
+    for win in x.clients():
+        try:
+            if rx.search(x.title(win)):
+                return win
+        except Exception:
+            continue
+    return 0
+
+
 def process_name(pid):
     """What the process is called, as far as /proc will say.
 
@@ -251,7 +303,7 @@ def process_name(pid):
 
 
 def windows():
-    """[(title, pid, (x, y, w, h))] for every window currently on screen."""
+    """[(win, title, pid, (x, y, w, h))] for every window now on screen."""
     x = _display()
     if x is None:
         return []
@@ -260,7 +312,7 @@ def windows():
         try:
             geo = x.geometry(x.framed(win))
             if geo and geo[2] > 1 and geo[3] > 1:
-                out.append((x.title(win), x.pid(win), geo))
+                out.append((win, x.title(win), x.pid(win), geo))
         except Exception:
             continue
     return out
@@ -269,7 +321,7 @@ def windows():
 def find_window(pattern):
     """(x, y, w, h) of the first mapped window whose title matches, or None."""
     rx = re.compile(pattern, re.I)
-    for title, _pid, geo in windows():
+    for _win, title, _pid, geo in windows():
         if rx.search(title):
             return geo
     return None

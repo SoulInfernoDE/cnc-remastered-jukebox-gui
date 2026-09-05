@@ -7,11 +7,13 @@ This opens a window with the same title, size and artwork - read from the
 installed ClientLauncherG.exe, not shipped here - and starts the companion
 against it.
 
-Measured on a running launcher: the window is 560x618 and titled
-"CnCRemastered", with its 560x616 of artwork one pixel down from the top.  It
-answers to the launcher's process name too, since that is what the companion
-goes by - Proton names the process after the Windows executable, and prctl
-lets this one say the same thing.
+Measured on a running launcher: the window is 560x618, titled "CnCRemastered",
+and it draws its 560x616 background stretched over the whole of that, with the
+three buttons composited on top at the offsets in LAYOUT.  This copies all of
+it, so that what the companion sees is what it will see for real.  It answers
+to the launcher's process name too, since that is what the companion goes by -
+Proton names the process after the Windows executable, and prctl lets this one
+say the same thing.
 
     tools/mock-launcher            # window plus the Jukebox row under it
     tools/mock-launcher --bare     # just the window, start the row yourself
@@ -29,7 +31,7 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 
 TITLE = "CnCRemastered"           # what the real one puts in WM_NAME
-BORDER = 1                        # the artwork sits this far into the window
+WINDOW = (560, 618)               # the size the real one opens at
 PROCESS = b"ClientLauncherG"      # what Proton calls the real one, to the byte
 PR_SET_NAME = 15
 
@@ -55,9 +57,9 @@ def main():
 
     from PyQt5.QtWidgets import QApplication, QWidget
     from PyQt5.QtGui import QPainter
-    from PyQt5.QtCore import Qt
+    from PyQt5.QtCore import QRect, Qt
     from jukebox.gamedata import find_game_dir, GameDataError
-    from jukebox.launcher import BASE_SIZE, LauncherArt
+    from jukebox.launcher import BASE_SIZE, LAYOUT, LauncherArt
 
     game = args.game or find_game_dir()
     if not game:
@@ -73,15 +75,27 @@ def main():
     class Mock(QWidget):
         def __init__(self):
             super(Mock, self).__init__()
-            self.bg = art.part("background")
+            self.face = self._compose()
             self.setWindowTitle(TITLE)
             self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
-            self.setFixedSize(BASE_SIZE[0], BASE_SIZE[1] + 2 * BORDER)
+            self.setFixedSize(*WINDOW)
+
+        def _compose(self):
+            """Background stretched to the window, then the buttons on top."""
+            from PyQt5.QtGui import QImage
+            out = QImage(WINDOW[0], WINDOW[1], QImage.Format_ARGB32)
+            out.fill(0)
+            q = QPainter(out)
+            q.setRenderHint(QPainter.SmoothPixmapTransform, True)
+            q.drawImage(QRect(0, 0, *WINDOW), art.part("background"))
+            for name, (x, y) in LAYOUT.items():
+                q.drawImage(x, y, art.part(name))
+            q.end()
+            return out
 
         def paintEvent(self, _):
             p = QPainter(self)
-            p.fillRect(self.rect(), Qt.black)
-            p.drawImage(0, BORDER, self.bg)
+            p.drawImage(0, 0, self.face)
             p.end()
 
         def mousePressEvent(self, ev):

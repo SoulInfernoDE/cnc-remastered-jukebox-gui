@@ -39,6 +39,13 @@ Vor der Beschriftung stehen die drei App-Symbole — Tiberiumkonflikt, Sowjets,
 Alliierte — von links nach rechts leicht überlappend, dasselbe Gehäuse, das die
 Jukebox in der Taskleiste trägt.
 
+Das Überfahren folgt dem Muster des Launchers, und das sind zwei Dinge auf
+einmal: das Rauschen wird heller — das bringt die überfahrene Fassung des
+Feldes von selbst mit — und die Beschriftung verlässt das Weiß zugunsten der
+Farbe des Feldes. Beim Karteneditor wird sie (96, 189, 254); diese hier nimmt
+Sättigung und Helligkeit jenes Blaus bei Farbton 120, das Wort wird also
+grün.
+
 ## Sie folgt dem Launcher
 
 Das Launcher-Fenster lässt sich nichts fragen: es ist eine Windows-Anwendung
@@ -57,15 +64,28 @@ der Windows-Anwendung, `/proc/<pid>/comm` liest also für das eine
 Titel und die Fensterproportionen sind nur der Rückfall für Arbeitsumgebungen,
 die keine Prozessnummer melden.
 
-Das Fenster ist außerdem eine Spur höher als die Grafik darin — 560×618 gegen
-560×616, je ein Pixel Rand oben und unten. Der Maßstab kommt deshalb aus der
-Breite, die keinen Rand hat, und die Grafik gilt als mittig in der übrigen
-Höhe.
+Wo genau sie sitzt, wurde gemessen statt angenommen: die Bitmaps des Launchers
+wurden über einen Bildschirmabzug von ihm geschoben, bis sie passten. Das
+Fenster ist 560×618, es zieht seinen 560×616 großen Hintergrund über die ganze
+Fläche, und die Karteneditor-Zeile landet bei x 24..538, y 490..588 — vier
+Pixel höher, als die Vertiefung im Hintergrund vermuten lässt. Die Zeile
+beginnt deshalb 29 Pixel über dem unteren Fensterrand, dort, wo jenes Feld
+wirklich endet. Am Hintergrund ausgerichtet blieben vier Zeilen davon sichtbar,
+und diese zusätzliche Kante ließ die beiden Fenster gestapelt statt verbunden
+aussehen.
 
-Verschwindet der Launcher — weil ein Spiel gewählt oder das Fenster einfach
-geschlossen wurde — verschwindet die Zeile im selben Moment mit. Eine zuvor
-darüber geöffnete Jukebox läuft weiter: deshalb wird der Begleiter in einer
-eigenen Sitzung gestartet und nicht beim Beenden abgeräumt.
+Die Zeile schwebt nicht über allem. Sie ist an den Launcher gebunden, mit
+demselben Hinweis, den ein Dialog auf sein zugehöriges Fenster setzt; die
+Arbeitsumgebung hält sie damit direkt darüber und sonst nirgends: holst du eine
+andere Anwendung nach vorn, verschwindet die Zeile dahinter, genau wie der
+Launcher. Ignoriert eine Umgebung den Hinweis, wird stattdessen die
+Stapelreihenfolge geprüft, und die Zeile nur dann angehoben, wenn der Launcher
+selbst nach vorn gekommen ist.
+
+Verschwindet der Launcher — weil ein Spiel gewählt, das Fenster geschlossen
+oder auch nur minimiert wurde — verschwindet die Zeile im selben Moment mit.
+Eine zuvor darüber geöffnete Jukebox läuft weiter: deshalb wird der Begleiter
+in einer eigenen Sitzung gestartet und nicht beim Beenden abgeräumt.
 
 Dafür braucht es X11. In einer Wayland-Sitzung kann niemand erfragen, wo das
 Fenster eines anderen Programms steht; dort weicht die Zeile nach einer

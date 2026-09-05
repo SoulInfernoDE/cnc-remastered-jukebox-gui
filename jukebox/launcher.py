@@ -140,10 +140,13 @@ def _decode_dib(dib):
     return (img.mirrored(False, True) if flip else img).copy()
 
 
-# Where each button sits on the 560x616 background, measured by compositing
-# the parts back onto it and checking them against the real window.
-LAYOUT = {"td": (22, 278), "ra": (283, 278),
-          "editor": (22, 494), "close": (524, 10)}
+# Where each button sits, correlated against a running launcher rather than
+# eyeballed: its own bitmaps were slid over a screenshot of it and these are
+# the offsets that fit.  The Map Editor row, which this file leans on, sits at
+# x 24..538 and y 490..588 of a 560x618 window, with 29 rows of frame below
+# it and eight of seam above.
+LAYOUT = {"td": (25, 277), "ra": (285, 277),
+          "editor": (24, 490), "close": (515, 14)}
 BASE_SIZE = (560, 616)
 ASPECT = BASE_SIZE[0] / float(BASE_SIZE[1])
 
@@ -158,21 +161,28 @@ LAUNCHER_TITLE = r"^CnCRemastered$|Command\s*&\s*Conquer.*Remastered"
 ASPECT_TOL = 0.06
 
 # The Map Editor slot is the shape this project borrows: a full-width row at
-# the foot of the panel.  Its row runs y 494..593 of the 560x616 background,
-# with an 8-pixel seam above it and the 23 pixels below it that close the
-# window off.  Taking that whole 130-pixel strip as the base - rather than
-# stacking the pieces - keeps the side rails and rivets that run down its
-# edges, and the green slot then covers the Map Editor exactly.
-STRIP = (0, 486, 560, 130)              # seam, button row and closing frame
-SLOT_AT = (22, 8)                       # the slot's place within the strip
-CAP_H = 23                              # frame below the row, and the overlap
-PANEL_H = STRIP[3]                      # 130
+# the foot of the panel.  The strip taken as the base is the seam above such a
+# row, the row itself and the frame that closes the window off - all three in
+# one piece, so the side rails and rivets running down the edges come with it,
+# and the green slot then covers the Map Editor exactly.
+STRIP = (0, 480, 560, 136)              # seam, button row and closing frame
+SLOT_AT = (24, 8)                       # the slot's place within the strip
+CAP_H = 29                              # frame below the row, and the overlap
+PANEL_H = STRIP[3]                      # 136
+
+# The seam rows are cut from between the two half-width buttons, so they carry
+# the divider that separates those.  A full-width row has nothing there, so
+# that stretch is replaced by a copy of the plain metal beside it.
+SEAM_ROWS = 8
+DIVIDER = (245, 80)                     # x and width of the piece to replace
+DIVIDER_FROM = 115                      # x of the plain metal it is taken from
 
 # Inside the Map Editor bitmap.  The bevel is six pixels; the label band
-# starts at 62; the planet occupies x 130..390, so the clean noise sits to
-# either side of it and the clean stretch of band is past the lettering.
+# starts at 62; the planet occupies x 130..390, and its glow reaches a dozen
+# pixels further on the hovered copy - which is the brighter of the two, so
+# the clean noise is measured there and cut well clear of it.
 INNER = (6, 6, 502, 89)
-NOISE = ((12, 8, 116, 54), (392, 8, 116, 54))
+NOISE = ((14, 8, 100, 54), (404, 8, 100, 54))
 BAND = (430, 62, 70, 33)
 
 # Blue for Tiberian Dawn, red for Red Alert, and green here, which is what a
@@ -191,22 +201,22 @@ def launcher_shaped(geo):
 
 
 def find_launcher():
-    """The launcher window's rectangle on screen, or None.
+    """(window id, rectangle) of the launcher's window, or None.
 
     The process is asked first, because it answers without ambiguity.  Where
     the desktop reports no pid, the title has to do, and then the window's
     proportions are the guard - the game is never that shape.
     """
     fallback = None
-    for title, pid, geo in xwin.windows():
+    for win, title, pid, geo in xwin.windows():
         name = xwin.process_name(pid).lower()
         if name:
             if name == LAUNCHER_PROCESS:
-                return geo
+                return win, geo
             continue          # a known process that is not it, title or not
         if fallback is None and re.search(LAUNCHER_TITLE, title, re.I) \
                 and launcher_shaped(geo):
-            fallback = geo
+            fallback = (win, geo)
     return fallback
 
 
@@ -232,14 +242,18 @@ def green_slot(art, hovered=False):
     for box in NOISE:
         t = src.copy(QRect(*box))
         tiles += [t, t.mirrored(True, False)]    # mirrored, or the repeat shows
-    i, y = 0, inner.top()
+    tw, th = tiles[0].width(), tiles[0].height()
+    i, row, y = 0, 0, inner.top()
     while y < inner.bottom():
-        x = inner.left()
+        # Each row starts at a different offset, or the tile joins would line
+        # up into vertical seams - which the brighter hovered noise shows.
+        x = inner.left() - (row * 43) % tw
         while x < inner.right():
             p.drawImage(x, y, tiles[i % len(tiles)])
-            x += tiles[0].width()
+            x += tw
             i += 1
-        y += tiles[0].height()
+        y += th
+        row += 1
         i += 1
     band = src.copy(QRect(*BAND))
     x = inner.left()
@@ -267,6 +281,14 @@ ICON_X = 8
 ICON_CY = 45
 LABEL_PX = 28
 
+# The launcher's own hover does two things: it brightens the noise, which
+# comes along with the hovered bitmap, and it turns the lettering from white
+# to the slot's colour - the Map Editor's goes to (96, 189, 254).  Ours takes
+# the same treatment in green: that blue's saturation and value at hue 120.
+LABEL = QColor(228, 228, 228)
+LABEL_HOVER = QColor.fromHsv(120, QColor(96, 189, 254).saturation(),
+                             QColor(96, 189, 254).value())
+
 
 def panel_image(art, icons, family, label, hovered=False):
     """The strip that goes under the launcher: gap, green slot, closing frame."""
@@ -278,6 +300,8 @@ def panel_image(art, icons, family, label, hovered=False):
     p = QPainter(out)
     p.setRenderHint(QPainter.SmoothPixmapTransform, True)
     p.setRenderHint(QPainter.Antialiasing, True)
+    patch = out.copy(QRect(DIVIDER_FROM, 0, DIVIDER[1], SEAM_ROWS))
+    p.drawImage(DIVIDER[0], 0, patch)
     ox, oy = SLOT_AT
     p.drawImage(ox, oy, slot)
     for i in reversed(range(len(icons))):     # the leftmost ends up on top
@@ -289,7 +313,7 @@ def panel_image(art, icons, family, label, hovered=False):
     f.setBold(True)
     f.setLetterSpacing(QFont.PercentageSpacing, 115)
     p.setFont(f)
-    p.setPen(QColor(238, 243, 238) if hovered else QColor(210, 216, 210))
+    p.setPen(LABEL_HOVER if hovered else LABEL)
     p.drawText(QRect(ox + INNER[0], oy + BAND[1], INNER[2], BAND[3]),
                Qt.AlignCenter, label)
     p.end()
@@ -326,11 +350,15 @@ class LauncherPanel(QWidget):
         self._hover = False
         self._seen = False
         self._waited = 0
+        self._tied = 0
         self._drag = None
         self._moved = False
         self.setWindowTitle("Jukebox")
-        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint |
-                            Qt.WindowStaysOnTopHint | Qt.Tool)
+        # Not on top of everything: the row belongs to the launcher and hides
+        # behind other applications exactly as the launcher does.  Staying
+        # just above it is the window manager's job, told through the same
+        # hint a dialog uses (see attach).
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground, False)
         self.setMouseTracking(True)
         self.setFixedSize(*BASE_SIZE[:1] + (PANEL_H,))
@@ -397,8 +425,8 @@ class LauncherPanel(QWidget):
         self._timer.stop()
 
     def _follow(self):
-        geo = find_launcher() if xwin.available() else None
-        if geo is None:
+        found = find_launcher() if xwin.available() else None
+        if found is None:
             if self._seen:                       # it was there and now is not
                 self._timer.stop()
                 self.hide()
@@ -409,26 +437,44 @@ class LauncherPanel(QWidget):
                 self.place_fallback()            # no launcher: stand on its own
                 self.show()
             return
+        win, geo = found
         self._seen = True
         self.attach(geo)
         if not self.isVisible():
             self.show()
-            self.raise_()
+        self._stay_with(win)
+
+    def _stay_with(self, launcher):
+        """Keep the row immediately above the launcher, and nowhere else.
+
+        The transient-for hint says the row belongs to that window, which is
+        what most desktops need to keep the two together.  Where one ignores
+        it, the stacking order says whether the launcher has come out on top,
+        and only then is the row lifted - so it never floats over anything
+        else the way an always-on-top window would.
+        """
+        me = int(self.winId())
+        if launcher != self._tied:
+            self._tied = launcher
+            xwin.keep_above(me, launcher)
+        order = xwin.stacking()
+        try:
+            if order.index(launcher) > order.index(me):
+                self.raise_()
+        except ValueError:
+            pass
 
     def attach(self, geo):
         """Sit on the launcher's bottom frame, so the two look like one window.
 
-        The window is slightly taller than the artwork inside it - 618 against
-        616 on the one measured here, a pixel of border above and below - so
-        the scale is taken from the width, which has no border, and the
-        artwork is assumed to be centred in whatever height is left over.
+        Measured on a running launcher, the Map Editor row ends 29 rows above
+        the foot of the window, so that is where this one begins - covering
+        the frame the launcher closes itself off with, and carrying its own.
         """
         x, y, w, h = geo
         scale = max(0.5, min(3.0, w / float(BASE_SIZE[0])))
-        art_h = BASE_SIZE[1] * scale
-        top = y + (h - art_h) / 2.0 + art_h - CAP_H * scale
         self.setFixedSize(w, int(round(PANEL_H * scale)))
-        self.move(x, int(round(top)))
+        self.move(x, y + h - int(round(CAP_H * scale)))
 
     def place_fallback(self):
         """Bottom-right of the screen, for when the launcher cannot be found."""
