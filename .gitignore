@@ -7,3 +7,9 @@ cnc_soundtrack/
 
 __pycache__/
 *.pyc
+
+# Aufnahmen der laufenden Oberflaeche - jedes Bild davon zeigt EAs Grafiken.
+demo/
+*.mp4
+*.gif
+*.mkv

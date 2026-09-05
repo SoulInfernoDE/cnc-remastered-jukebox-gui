@@ -1,0 +1,463 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Walks through the whole project on screen, captioned, for recording.
+
+Everything shown is the real thing: the launcher's own artwork, the row built
+from it, and the jukebox itself.  Only two things are stood in for - the audio,
+because a virtual display has no sound card, and the launcher window, because
+the real one needs Steam and Proton.
+
+Meant to be recorded off a virtual display, so that it neither disturbs nor
+depends on whatever is on the real one:
+
+    Xvfb :90 -screen 0 1920x1080x24 &
+    ffmpeg -f x11grab -draw_mouse 0 -framerate 30 -video_size 1920x1080 \
+           -i :90 -t 62 -c:v ffv1 raw.mkv &
+    DISPLAY=:90 tools/demo-tour
+
+Then trim to the content and compress hard - screen recordings are mostly
+still, so this costs almost nothing in sharpness:
+
+    ffmpeg -ss 1.4 -t 59.4 -i raw.mkv -c:v libx264 -preset veryslow \
+           -tune stillimage -crf 28 -pix_fmt yuv420p -movflags +faststart \
+           demo.mp4
+
+Nothing it produces belongs in this repository: a film of the running
+interface is a film of EA's artwork, which is why there are no screenshots
+here either.
+"""
+
+import os
+import sys
+
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, HERE)
+
+from PyQt5.QtCore import QObject, QRect, Qt, QTimer, pyqtSignal
+from PyQt5.QtGui import (QColor, QFont, QFontDatabase, QImage, QLinearGradient,
+                         QPainter, QPen)
+from PyQt5.QtWidgets import QApplication, QWidget
+
+from jukebox.assets import Atlas
+from jukebox.gamedata import GameData, find_game_dir
+from jukebox.icon import pixmap as icon_pixmap
+import jukebox.audio as audio
+import jukebox.launcher as L
+import jukebox.ui as U
+
+SCREEN = (1920, 1080)
+CAPTION_H = 152
+STAGE = SCREEN[1] - CAPTION_H
+
+audio.play_effect = lambda *a, **k: None          # no sound card here
+
+
+class FakePlayer(QObject):
+    """Plays nothing, but says it is playing, so the emblem turns."""
+
+    positionChanged = pyqtSignal(float)
+    stateChanged = pyqtSignal(str)
+    trackFinished = pyqtSignal()
+    failed = pyqtSignal(str)
+
+    def __init__(self, parent=None):
+        super(FakePlayer, self).__init__(parent)
+        self._state = "stopped"
+        self._pos = 0.0
+        self._dur = 0.0
+        self._t = QTimer(self)
+        self._t.setInterval(100)
+        self._t.timeout.connect(self._tick)
+
+    state = property(lambda self: self._state)
+    duration = property(lambda self: self._dur)
+    position = property(lambda self: self._pos)
+
+    def _tick(self):
+        if self._state == "playing":
+            self._pos = min(self._dur, self._pos + 0.1)
+            self.positionChanged.emit(self._pos)
+
+    def load(self, wav, autoplay=True):
+        self._pos, self._dur = 0.0, 210.0
+        self._state = "playing"
+        self._t.start()
+        self.stateChanged.emit(self._state)
+
+    def toggle(self):
+        self._state = "paused" if self._state == "playing" else "playing"
+        self.stateChanged.emit(self._state)
+
+    def stop(self):
+        self._state = "stopped"
+        self._t.stop()
+        self.stateChanged.emit(self._state)
+
+    def seek(self, s):
+        self._pos = max(0.0, min(self._dur, s))
+        self.positionChanged.emit(self._pos)
+
+    def set_volume(self, v):
+        pass
+
+
+class Backdrop(QWidget):
+    """The ground everything sits on, and the line of explanation below it."""
+
+    def __init__(self, families):
+        super(Backdrop, self).__init__()
+        self.fam = families
+        self.title = ""
+        self.body = ""
+        self.step = ""
+        self.card = None
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+        self.setFixedSize(*SCREEN)
+
+    def say(self, title, body, step=""):
+        self.title, self.body, self.step = title, body, step
+        self.card = None
+        self.update()
+
+    def show_card(self, lines):
+        """A full-screen title, for the opening and the close."""
+        self.card = lines
+        self.update()
+
+    def _paint_card(self, p):
+        big, sub, small = self.card
+        f = QFont(self.fam.get("russell", self.fam.get("orbitron", "DejaVu Sans")))
+        f.setPixelSize(76)
+        f.setLetterSpacing(QFont.PercentageSpacing, 106)
+        p.setFont(f)
+        p.setPen(QColor(150, 230, 150))
+        p.drawText(QRect(0, 372, SCREEN[0], 92), Qt.AlignHCenter, big)
+        f = QFont("DejaVu Sans")
+        f.setPixelSize(32)
+        p.setFont(f)
+        p.setPen(QColor(212, 216, 220))
+        p.drawText(QRect(360, 486, SCREEN[0] - 720, 96),
+                   Qt.AlignHCenter | Qt.AlignTop | Qt.TextWordWrap, sub)
+        f.setPixelSize(23)
+        p.setFont(f)
+        p.setPen(QColor(120, 128, 134))
+        p.drawText(QRect(0, 606, SCREEN[0], 40), Qt.AlignHCenter, small)
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        g = QLinearGradient(0, 0, 0, SCREEN[1])
+        g.setColorAt(0.0, QColor(16, 18, 20))
+        g.setColorAt(0.6, QColor(11, 12, 14))
+        g.setColorAt(1.0, QColor(8, 9, 10))
+        p.fillRect(self.rect(), g)
+
+        if self.card is not None:
+            self._paint_card(p)
+            p.end()
+            return
+
+        bar = QRect(0, STAGE, SCREEN[0], CAPTION_H)
+        p.fillRect(bar, QColor(20, 22, 24))
+        p.setPen(QPen(QColor(120, 200, 120, 90), 2))
+        p.drawLine(0, STAGE, SCREEN[0], STAGE)
+
+        f = QFont(self.fam.get("orbitron", "DejaVu Sans"))
+        f.setPixelSize(30)
+        f.setBold(True)
+        f.setLetterSpacing(QFont.PercentageSpacing, 108)
+        p.setFont(f)
+        p.setPen(QColor(150, 230, 150))
+        p.drawText(QRect(64, STAGE + 20, SCREEN[0] - 320, 38),
+                   Qt.AlignLeft | Qt.AlignVCenter, self.title)
+
+        f = QFont("DejaVu Sans")
+        f.setPixelSize(25)
+        p.setFont(f)
+        p.setPen(QColor(206, 210, 214))
+        p.drawText(QRect(64, STAGE + 64, SCREEN[0] - 300, 84),
+                   Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, self.body)
+
+        f = QFont(self.fam.get("orbitron", "DejaVu Sans"))
+        f.setPixelSize(22)
+        p.setFont(f)
+        p.setPen(QColor(120, 126, 132))
+        p.drawText(QRect(SCREEN[0] - 260, STAGE + 22, 196, 34),
+                   Qt.AlignRight | Qt.AlignVCenter, self.step)
+
+        p.end()
+
+
+class Mock(QWidget):
+    """The launcher's window, drawn from its own bitmaps."""
+
+    def __init__(self, art):
+        super(Mock, self).__init__()
+        self.face = QImage(560, 618, QImage.Format_ARGB32)
+        self.face.fill(0)
+        q = QPainter(self.face)
+        q.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        q.drawImage(QRect(0, 0, 560, 618), art.part("background"))
+        for name, (x, y) in L.LAYOUT.items():
+            q.drawImage(x, y, art.part(name))
+        q.end()
+        self.setWindowTitle("CnCRemastered")
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+        self.setFixedSize(560, 618)
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.drawImage(0, 0, self.face)
+        p.end()
+
+
+def main():
+    app = QApplication(sys.argv)
+    data = GameData(language="DE-DE")
+    art = L.LauncherArt(find_game_dir())
+    atlas = Atlas(data.textures)
+
+    fams = {}
+    for key, path in U.FONTS.items():
+        raw = data.config.get(path)
+        if raw is None:
+            continue
+        fid = QFontDatabase.addApplicationFontFromData(raw)
+        got = QFontDatabase.applicationFontFamilies(fid) if fid != -1 else []
+        if got:
+            fams[key] = got[0]
+
+    back = Backdrop(fams)
+    back.show()
+
+    icons = [icon_pixmap(256, atlas.sprite(
+                 U.TRACK_ICON["Tiberian_Dawn" if s == "td" else "Red_Alert"]),
+                 U.ACCENT[s]) for s in ("td", "soviet", "allied")]
+    panel = L.LauncherPanel(art, icons, fams.get("orbitron", "DejaVu Sans"))
+
+    LX, LY = (SCREEN[0] - 560) // 2, 78
+    mock = Mock(art)
+    win = {"jb": None}
+
+    JW, JH = 1180, 885
+    JX, JY = (SCREEN[0] - JW) // 2, (STAGE - JH) // 2
+
+    def card(lines):
+        def go():
+            mock.hide()
+            panel.hide()
+            if win["jb"] is not None:
+                win["jb"].hide()
+            back.show_card(lines)
+        return go
+
+    def jukebox():
+        w = win["jb"]
+        if w is None:
+            w = U.JukeboxWindow(data, "soviet")
+            w.player.stop()
+            w.player = FakePlayer(w)
+            w.player.positionChanged.connect(lambda _: w.update())
+            w.player.stateChanged.connect(lambda _: w.update())
+            w.resize(JW, JH)
+            w.move(JX, JY)
+            win["jb"] = w
+        return w
+
+    def hover(w, kind):
+        """Put the pointer over one control, as far as the widget knows."""
+        for h in getattr(w, "hits", []):
+            if h.kind == kind:
+                w._hover = h
+                w.update()
+                return h
+        return None
+
+    # -- the script ------------------------------------------------------
+    steps = []
+
+    def step(seconds, title, body, tag, action=None):
+        steps.append((seconds, title, body, tag, action))
+
+    def show_launcher():
+        mock.show()
+        mock.move(LX, LY)
+
+    def attach_row():
+        panel.attach((LX, LY, 560, 618))
+        panel.show()
+        panel.raise_()
+
+    def row_hover(on):
+        panel._hover = on
+        panel.update()
+
+    def open_jukebox():
+        panel.hide()
+        mock.hide()
+        w = jukebox()
+        w.show()
+        w.raise_()
+
+    def play_first():
+        w = jukebox()
+        if not w.playlist:
+            w.playlist = list(w.available[:14])
+        w.sel_playlist = w.playlist[3]
+        w.play(w.playlist[3])
+
+    def show_filters():
+        w = jukebox()
+        w.filters["Classic"] = True
+        w.scroll["available"] = 0.0
+        w.grab()
+        hover(w, "filter:Classic")
+
+    def show_button_sfx():
+        w = jukebox()
+        w.grab()
+        hover(w, "button_sfx")
+
+    def show_folder():
+        w = jukebox()
+        w.grab()
+        hover(w, "folder")
+
+    def change_skin():
+        w = jukebox()
+        w._hover = None
+        w.start_skin_change()
+
+    def to_soundbox():
+        w = jukebox()
+        w._hover = None
+        w.toggle_mode()
+
+    def pick_sound():
+        w = jukebox()
+        w.grab()
+        wanted = [s for s in w.sound_list if s.label and len(s.label) > 12]
+        w.sel_sound = wanted[7] if len(wanted) > 7 else w.sound_list[0]
+        w.update()
+
+    def pick_object():
+        w = jukebox()
+        w.show_vfx = True                  # so the count reads all 409
+        w.scroll["playlist"] = 0.0
+        w.grab()
+        want = ("htnk", "4tnk", "mammoth", "harv", "heli", "orca", "mcv")
+        pick = None
+        for o in w.object_list:
+            name = (getattr(o, "name", "") or "").lower()
+            if any(k in name for k in want):
+                pick = o
+                break
+        w.sel_object = pick or w.object_list[6]
+        w._frame_i = 0.0
+        w.update()
+
+    def back_to_jukebox():
+        w = jukebox()
+        w._hover = None
+        w.toggle_mode()
+
+    step(3.4, "", "", "", card((
+        "CNC-REMASTERED-JUKEBOX",
+        "Die Musik der Command & Conquer Remastered Collection, "
+        "außerhalb des Spiels.",
+        "Linux  ·  liest die eigene Installation  ·  verändert nichts")))
+    step(2.6, "Der Launcher des Spiels",
+         "Das Fenster, das Steam beim Klick auf Spielen öffnet. Nichts daran "
+         "wird verändert - das Spiel startet genau wie zuvor.",
+         "1 / 12", show_launcher)
+    step(3.0, "Die Jukebox-Zeile setzt sich an",
+         "Sie wartet, bis der Launcher wirklich auf dem Bildschirm steht, und "
+         "legt sich dann über dessen unteren Rahmen. Die Naht verschwindet.",
+         "2 / 12", attach_row)
+    step(2.4, "Aus den Pixeln des Launchers gebaut",
+         "Rahmen, Nieten und Seitenschienen stammen aus seinen eigenen "
+         "Bitmaps; nur das Karteneditor-Feld ist ersetzt und grün eingefärbt.",
+         "3 / 12", None)
+    step(2.4, "Überfahren",
+         "Wie bei den anderen Feldern: das Rauschen wird heller, und die "
+         "Beschriftung verlässt das Weiß zugunsten der Feldfarbe.",
+         "4 / 12", lambda: row_hover(True))
+    step(2.6, "Ein Klick öffnet die Jukebox",
+         "Sie läuft eigenständig weiter, auch wenn der Launcher längst "
+         "geschlossen ist.",
+         "5 / 12", open_jukebox)
+    step(3.4, "203 Titel, zwölf Stunden",
+         "Die Namen stehen so da, wie das Spiel sie in seiner eigenen Jukebox "
+         "zeigt - aus MUSIC.MEG, der XML-Titelliste und der Sprachtabelle "
+         "gelesen, nicht geraten.",
+         "6 / 12", None)
+    step(4.2, "Wiedergabe",
+         "Doppelklick spielt einen Titel. Das Emblem des laufenden Stücks "
+         "dreht sich dabei um die eigene Achse - dreidimensional, wie ein "
+         "geschlagenes Werkstück.",
+         "7 / 12", play_first)
+    step(3.2, "Filter",
+         "Nach Spiel, Fassung und Bonusinhalt. Die Classic-Aufnahmen von "
+         "1995 stehen in derselben Liste wie die remasterten.",
+         "8 / 12", show_filters)
+    step(2.8, "Button-Sounds",
+         "Jeder Knopf hat eine Stimme aus dem passenden Spiel. Dieses "
+         "Kästchen schaltet sie ab - Musik und Vorschau bleiben unberührt.",
+         "9 / 12", show_button_sfx)
+    step(2.8, "Der Ordner",
+         "Öffnet den Ordner, in den der Soundtrack-Export schreibt: im "
+         "Benutzerverzeichnis des Spiels, das Steam bei Updates in Ruhe lässt.",
+         "10 / 12", show_folder)
+    step(5.6, "Skinwechsel",
+         "Der rechte Bolzen wechselt den Skin, so wie das Spiel ein Gebäude "
+         "hochzieht: Emblem, Bauuhr, „Konstruktion fertig\", und der neue "
+         "Skin setzt sich.",
+         "11 / 12", change_skin)
+    step(2.2, "Alarmstufe Rot, Alliierte",
+         "Drei Skins, alle aus den Texturen des Spiels: Sowjets, Alliierte "
+         "und der Tiberiumkonflikt.",
+         "11 / 12", None)
+    step(3.2, "Die Soundbox",
+         "Der Knopf unten wechselt den Bildschirm. Links jeder Soundeffekt "
+         "des Spiels - 1286 an der Zahl, nach Spiel, Klangtreue und Art "
+         "gruppiert.",
+         "12 / 12", to_soundbox)
+    step(3.2, "Gesprochene Zeilen zeigen, was sie sagen",
+         "Die Untertitel kommen aus der Sprachtabelle des Spiels. Wo es "
+         "selbst nie übersetzt hat, bleibt die Zeile englisch - genau wie "
+         "im Spiel.",
+         "12 / 12", pick_sound)
+    step(4.4, "Einheiten und Gebäude",
+         "Rechts 409 Einheiten, Gebäude und Effekte, aus ihren eigenen "
+         "Sprite-Bildern animiert. Sie stehen neben den Klängen, nicht mit "
+         "ihnen verknüpft: die Spiele liefern keine Zuordnung.",
+         "12 / 12", pick_object)
+    step(3.0, "Zurück zur Jukebox",
+         "Nichts wird verändert, nichts installiert: beide Programme lesen "
+         "nur die Dateien, die ohnehin auf der Platte liegen.",
+         "12 / 12", back_to_jukebox)
+
+    step(4.0, "", "", "", card((
+        "GITHUB.COM/SOULINFERNODE",
+        "cnc-remastered-jukebox  ·  Branch gui",
+        "Inoffizielles Fan-Projekt  ·  MIT  ·  nicht von EA  ·  "
+        "das Originalspiel wird benötigt")))
+
+    order = list(steps)
+
+    def run(i):
+        if i >= len(order):
+            QTimer.singleShot(700, app.quit)
+            return
+        secs, title, body, tag, action = order[i]
+        back.say(title, body, tag)
+        if action is not None:
+            action()
+        QTimer.singleShot(int(secs * 1000), lambda: run(i + 1))
+
+    QTimer.singleShot(900, lambda: run(0))
+    return app.exec_()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
