@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#
+# Adds the jukebox to the application menu, so it is one click away without
+# going through Steam at all.  Writes nothing outside the user's own
+# ~/.local/share; pass --remove to take it back out.
+#
+set -euo pipefail
+
+here="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+icons="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/256x256/apps"
+entry="$apps/cnc-jukebox.desktop"
+icon="$icons/cnc-jukebox.png"
+
+if [ "${1:-}" = "--remove" ]; then
+    rm -f "$entry" "$icon"
+    command -v update-desktop-database >/dev/null && update-desktop-database "$apps" 2>/dev/null || true
+    echo "Removed $entry"
+    exit 0
+fi
+
+mkdir -p "$apps" "$icons"
+"$here/cnc-jukebox" --write-icon "$icon" || {
+    echo "Could not render the icon; the entry will use a generic one." >&2
+}
+
+cat > "$entry" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=C&C Remastered Jukebox
+Comment=The game's music jukebox, on its own
+Exec=$here/cnc-jukebox
+Icon=$icon
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+Keywords=command;conquer;red alert;soundtrack;klepacki;
+DESKTOP
+
+chmod 644 "$entry"
+command -v update-desktop-database >/dev/null && update-desktop-database "$apps" 2>/dev/null || true
+echo "Installed $entry"
+echo "The jukebox should now appear in the application menu."

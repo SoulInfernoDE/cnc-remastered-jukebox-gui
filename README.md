@@ -158,9 +158,76 @@ Set the title's Steam launch options to:
 /full/path/to/tools/steam-launch-wrapper %command%
 ```
 
-Steam substitutes the real launch command, which the wrapper runs unchanged,
-so the game starts exactly as before; the jukebox opens next to it and closes
-with it.
+Press Play and the game starts exactly as before — same launcher, same
+everything — with a Jukebox button in the launcher's own style beside it, drawn
+from the launcher's own artwork. One click opens the jukebox; it closes with
+the game.
+
+For the jukebox on its own, without Steam in the way:
+
+```bash
+./tools/install-desktop-entry      # --remove takes it back out
+```
+
+That puts it in the application menu with the skin's icon, one click from
+anywhere. It writes only inside `~/.local/share`.
+
+### It does not disturb Steam
+
+The wrapper runs Steam's own command unchanged and waits for it, so Steam
+keeps tracking the game it launched: play time, the overlay, and the "In-Game"
+state your friends see all behave as they always did. Nothing is patched,
+replaced or injected, and the game's own files are never touched.
+
+It is also transparent about failure, which is what keeps Steam from being
+left hanging. Tested: a normal run returns 0 and the button is gone; a missing
+command returns 127; a game exiting 42 passes 42 straight through. In every
+case the companion window is closed, on any exit path, including a kill.
+
+> Verified here as far as a single machine allows. Whether your friends list
+> shows "In-Game" is Steam's own bookkeeping about the process it started, and
+> a launch-option wrapper is the ordinary way to sit in front of that — the
+> same shape `gamemoderun` and `mangohud` use. I could not observe another
+> account's view of it from this machine.
+
+### Why not a Workshop item
+
+Because the Workshop cannot reach the launcher. Looking at what installed
+Workshop items actually contain, an item is either a map (`MAPDATA.PGM`) or a
+game-logic mod — a `ccmod.json` beside `CCDATA/*.INI` rules and sometimes a
+rebuilt game DLL. Those are loaded by the game after it starts.
+
+The launcher is `ClientLauncherG.exe`, a separate Windows executable that runs
+*before* the game and reads no mod data at all, so nothing shipped through the
+Workshop is in a position to add a button to it.
+
+Replacing it was the other idea, and it does not work either: `ClientG.exe`
+takes no game-selection argument, and the launcher records the choice nowhere —
+`Software\Petroglyph\CnCRemastered\Launcher` in the prefix holds two thread
+flags and nothing else. A stand-in chooser could only hand off to the real
+launcher, putting a second selection step in front of the game rather than
+taking one away. Sitting beside it costs nothing and takes nothing away.
+
+## What this is good for
+
+- **The soundtrack without the game.** Twelve hours of it, playing while you do
+  something else, without a 26 GB game running to hear it.
+- **The jukebox the game keeps to itself.** In the game it is reachable only
+  from a menu and only while the game runs; here it is a window like any other,
+  and its playlist survives independently.
+- **Every track, not only the unlocked ones.** The Classic recordings and the
+  Bonus arrangements sit in the same list as the Remastered ones, filtered
+  however you like.
+- **The tracks as files.** `cnc_trackexport` writes all 203 with the names the
+  jukebox shows, into the game's own folder, as MP3 or lossless FLAC — for a
+  phone, a car, or anywhere the game will never run.
+- **Nothing is modified.** No patched binaries, no replaced files, no injected
+  code. Both programs read the installation and write only their own output, so
+  there is nothing to undo and nothing for an update to break.
+- **It is documented.** The container, string-table and layout formats are
+  written down in `docs/`, so the next person does not have to work them out
+  from hex dumps again.
+
 
 ## Not reproduced
 

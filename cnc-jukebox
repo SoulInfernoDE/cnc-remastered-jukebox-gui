@@ -20,6 +20,11 @@ def main():
     ap.add_argument("-s", "--skin", default="soviet",
                     choices=("soviet", "allied", "td"), help="which jukebox skin")
     ap.add_argument("--fullscreen", action="store_true")
+    ap.add_argument("--write-icon", metavar="PATH",
+                    help="render the application icon to PATH and exit")
+    ap.add_argument("--launcher-button", action="store_true",
+                    help="show only the small Jukebox button, for use beside "
+                         "the game's own launcher (see tools/steam-launch-wrapper)")
     args = ap.parse_args()
 
     try:
@@ -49,6 +54,42 @@ def main():
         return 1
 
     from jukebox.ui import JukeboxWindow
+
+    if args.write_icon:
+        # Drawn from the game's own emblem, so it needs a window to build it.
+        from PyQt5.QtCore import QSize
+        win = JukeboxWindow(data, args.skin)
+        pm = win.windowIcon().pixmap(QSize(256, 256))
+        os.makedirs(os.path.dirname(os.path.abspath(args.write_icon)), exist_ok=True)
+        return 0 if pm.save(args.write_icon) else 1
+
+    if args.launcher_button:
+        from jukebox.assets import Atlas
+        from jukebox.launcher import LauncherArt, LauncherButton
+        from jukebox.ui import ACCENT, TRACK_ICON
+        art = LauncherArt(data.game_dir)
+        atlas = Atlas(data.textures)
+        emblem = atlas.sprite(TRACK_ICON["Red_Alert"
+                                        if args.skin != "td" else "Tiberian_Dawn"])
+        button = LauncherButton(art, ACCENT.get(args.skin, ACCENT["soviet"]),
+                                emblem)
+        holder = {}
+
+        def open_jukebox():
+            win = holder.get("win")
+            if win is not None and win.isVisible():
+                win.raise_()
+                win.activateWindow()
+                return
+            win = JukeboxWindow(data, args.skin)
+            holder["win"] = win
+            win.show()
+
+        button.clicked.connect(open_jukebox)
+        button.place_beside_launcher()
+        button.show()
+        return app.exec_()
+
     win = JukeboxWindow(data, args.skin)
     win.showFullScreen() if args.fullscreen else win.show()
     return app.exec_()

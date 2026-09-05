@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
 #
-# Opens the jukebox next to the game, then starts the game.
+# Puts a Jukebox button beside the game's own launcher, then starts the game.
 #
-# Put this in the title's Steam launch options:
+# Set it as the title's Steam launch options:
 #
 #     /full/path/to/tools/steam-launch-wrapper %command%
 #
-# Steam replaces %command% with the real launch command, which this script
-# runs unchanged - so the game starts exactly as it otherwise would.  The
-# jukebox is closed again when the game exits.
+# Steam replaces %command% with the real launch command, which this script runs
+# unchanged and waits for - so the game starts exactly as before, and Steam
+# keeps tracking it: play time, the overlay and the "In-Game" state your
+# friends see all behave as they always did.  The button is closed with the
+# game.
+#
+# It does not replace the launcher.  The launcher is a Windows executable that
+# runs before the game and reads no mod data, and ClientG.exe takes no
+# game-selection argument, so a stand-in chooser could only hand off to the
+# real one and would add a step rather than remove one.
 #
 set -euo pipefail
 
@@ -20,9 +27,10 @@ if [ ! -x "$jukebox" ]; then
     exec "$@"
 fi
 
-"$jukebox" &
+# Never let the companion window keep Steam waiting: it is killed on any exit.
+"$jukebox" --launcher-button &
 pid=$!
-trap 'kill "$pid" 2>/dev/null || true' EXIT
+trap 'kill "$pid" 2>/dev/null || true' EXIT INT TERM
 
 if [ "$#" -gt 0 ]; then
     "$@"
