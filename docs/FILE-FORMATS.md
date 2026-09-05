@@ -1,5 +1,7 @@
 # File formats
 
+***English** · [Deutsch](FILE-FORMATS.de.md)*
+
 Notes from reading the Command & Conquer Remastered Collection data files.
 Everything here was derived by inspecting the shipped archives; offsets were
 verified against all 22 `.MEG` files of a retail install.

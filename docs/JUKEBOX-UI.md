@@ -1,5 +1,7 @@
 # The in-game jukebox UI
 
+***English** · [Deutsch](JUKEBOX-UI.de.md)*
+
 Groundwork for rebuilding the jukebox faithfully. Everything below was read
 out of a retail installation with [`tools/dump-jukebox-ui`](../tools/dump-jukebox-ui);
 none of it is shipped in this repository.

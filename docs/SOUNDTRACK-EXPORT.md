@@ -1,5 +1,7 @@
 # Exporting the soundtrack
 
+***English** · [Deutsch](SOUNDTRACK-EXPORT.de.md)*
+
 Notes on `cnc_trackexport`: where the titles come from, why everything is
 resampled, and what the lossless option guarantees.
 

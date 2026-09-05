@@ -64,7 +64,7 @@ gewöhnliches Steam, Flatpak, Snap und jede weitere Bibliothek, die in
 sie fehlschlägt.
 
 Wie die Jukebox ins Anwendungsmenü kommt oder neben den Launcher des Spiels,
-wenn du in Steam auf Spielen klickst, steht in [`docs/STEAM.md`](docs/STEAM.md).
+wenn du in Steam auf Spielen klickst, steht in [`docs/STEAM.de.md`](docs/STEAM.de.md).
 
 ## Die Jukebox
 
@@ -137,16 +137,17 @@ aufgehört hat.
 
 ## Wie es funktioniert
 
-Die interessanten Teile sind aufgeschrieben, statt nur im Code zu stehen — die
-folgenden Dokumente sind auf Englisch:
+Die interessanten Teile sind aufgeschrieben, statt nur im Code zu stehen:
 
 | | |
 | --- | --- |
-| [`docs/FILE-FORMATS.md`](docs/FILE-FORMATS.md) | der MEG-Container, die `.LOC`-Zeichenkettentabelle, die Titelliste |
-| [`docs/JUKEBOX-UI.md`](docs/JUKEBOX-UI.md) | die `.BUI`-Layouts des Spiels, Texturen, Schriften und Sprite-Atlas |
-| [`docs/REBUILD.md`](docs/REBUILD.md) | was der Nachbau daraus macht, und wo die Spieldaten überraschen |
-| [`docs/SOUNDTRACK-EXPORT.md`](docs/SOUNDTRACK-EXPORT.md) | Titelzuordnung, Messungen zur Audioqualität, Tags |
-| [`docs/STEAM.md`](docs/STEAM.md) | der Begleiter am Launcher, und warum das kein Workshop-Element ist |
+| [`docs/FILE-FORMATS.de.md`](docs/FILE-FORMATS.de.md) | der MEG-Container, die `.LOC`-Zeichenkettentabelle, die Titelliste |
+| [`docs/JUKEBOX-UI.de.md`](docs/JUKEBOX-UI.de.md) | die `.BUI`-Layouts des Spiels, Texturen, Schriften und Sprite-Atlas |
+| [`docs/REBUILD.de.md`](docs/REBUILD.de.md) | was der Nachbau daraus macht, und wo die Spieldaten überraschen |
+| [`docs/SOUNDTRACK-EXPORT.de.md`](docs/SOUNDTRACK-EXPORT.de.md) | Titelzuordnung, Messungen zur Audioqualität, Tags |
+| [`docs/STEAM.de.md`](docs/STEAM.de.md) | der Begleiter am Launcher, und warum das kein Workshop-Element ist |
+
+Jedes Dokument gibt es auch auf Englisch; oben in jedem steht der Verweis.
 
 ## Branches
 

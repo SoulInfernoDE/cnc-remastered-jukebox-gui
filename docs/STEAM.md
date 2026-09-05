@@ -1,5 +1,7 @@
 # Sitting beside the game
 
+***English** · [Deutsch](STEAM.de.md)*
+
 The jukebox can appear next to the game's own launcher, so that pressing Play
 in Steam offers it as one more choice.
 

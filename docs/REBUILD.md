@@ -1,5 +1,7 @@
 # How the jukebox is rebuilt
 
+***English** · [Deutsch](REBUILD.de.md)*
+
 `docs/JUKEBOX-UI.md` describes the game's own interface as it is stored on
 disk. This file describes what the rebuild does with it — the decisions, the
 measurements, and the places where the game's data is stranger than expected.

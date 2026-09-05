@@ -143,6 +143,8 @@ The interesting parts are written down rather than left in the code:
 | [`docs/SOUNDTRACK-EXPORT.md`](docs/SOUNDTRACK-EXPORT.md) | title mapping, audio quality measurements, tags |
 | [`docs/STEAM.md`](docs/STEAM.md) | the launcher companion, and why this is not a Workshop item |
 
+Each of them is also available in German; the link sits at the top of each.
+
 ## Branches
 
 The stable exporter lives on [`export`](../../tree/export) on its own, with no
