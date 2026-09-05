@@ -101,7 +101,9 @@ The playlist, filters, volume and chosen skin are kept in
 
 **Exit** closes the jukebox, with EVA signing off in that game's own voice.
 The button beside it switches screens and is named after where it leads:
-**Soundbox** from the jukebox, **Jukebox** from the sound box. The playlist and
+**Soundbox** from the jukebox, **Jukebox** from the sound box, each announced
+in that game's own voice — EVA reporting new build options on the way in, the
+commando's "rock and roll" on the way back to the music. The playlist and
 settings are written on close either way.
 
 "Soundbox" names a screen the game does not have, so it and the two hover
@@ -141,8 +143,9 @@ textures rather than assumed.
   in that game's own voice. Like the other lines, the two games file it under
   different stems: `EVA_ETHANKS` for Tiberian Dawn, `EVA_THANKU1` for Red
   Alert.
-- **Folder** — opens the soundtrack folder, drawn in the current skin's colour.
-  That is the same folder `cnc_trackexport` writes to by default.
+- **Folder** — opens the soundtrack folder, drawn in the current skin's colour,
+  over a one-second country sting. That is the same folder `cnc_trackexport`
+  writes to by default.
 - **Right fastener** — changes the skin, the way the game puts up a building: the
   next faction's emblem appears across the whole player, EVA announces the
   construction, a build clock sweeps once around over three seconds, the

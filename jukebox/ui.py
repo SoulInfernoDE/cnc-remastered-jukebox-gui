@@ -99,18 +99,29 @@ SKIN_SFX = {
                "complete": "TDR_SFX_EVA_CONSTRU1",
                "place":    "TDR_SFX_CONSTRU2",
                "exit":     "TDR_SFX_EVA_BATLCON1",
-               "thanks":   "TDR_SFX_EVA_ETHANKS"},
+               "thanks":   "TDR_SFX_EVA_ETHANKS",
+               "soundbox": "TDR_SFX_EVA_NEWOPT1",
+               "jukebox":  "TDR_SFX_CMD_ROKROLL1"},
     "soviet": {"building": "RAR_SFX_EVA_ABLDGIN1",
                "complete": "RAR_SFX_EVA_CONSCMP1",
                "place":    "RAR_SFX_PLACBLDG",
                "exit":     "RAR_SFX_EVA_BCT1",
-               "thanks":   "RAR_SFX_EVA_THANKU1"},
+               "thanks":   "RAR_SFX_EVA_THANKU1",
+               "soundbox": "RAR_SFX_EVA_NEWOPT1",
+               "jukebox":  "RAR_SFX_CMD_ROKROLL1"},
     "allied": {"building": "RAR_SFX_EVA_ABLDGIN1",
                "complete": "RAR_SFX_EVA_CONSCMP1",
                "place":    "RAR_SFX_PLACBLDG",
                "exit":     "RAR_SFX_EVA_BCT1",
-               "thanks":   "RAR_SFX_EVA_THANKU1"},
+               "thanks":   "RAR_SFX_EVA_THANKU1",
+               "soundbox": "RAR_SFX_EVA_NEWOPT1",
+               "jukebox":  "RAR_SFX_CMD_ROKROLL1"},
 }
+
+# A one-second country sting for opening the track folder.  Red Alert ships no
+# counterpart - only bleeps and tones - and this is a jingle rather than a
+# faction voice, so all three skins use the Tiberian Dawn one.
+FOLDER_SFX = "TDR_SFX_COUNTRY1"
 SKIN_ORDER = ("soviet", "allied", "td")
 BUILD_SECONDS = 3.0
 TOAST_SECONDS = 1.8
@@ -403,6 +414,9 @@ class JukeboxWindow(QWidget):
 
     def toggle_mode(self):
         self.mode = "sounds" if self.mode == "playlist" else "playlist"
+        # EVA announces the new screen: build options for the sound box, and
+        # the commando's line on the way back to the music.
+        self._play_sfx(self.skin, "soundbox" if self.mode == "sounds" else "jukebox")
         self.scroll["available"] = 0.0
         self.scroll["playlist"] = 0.0
         self.update()
@@ -1422,6 +1436,7 @@ class JukeboxWindow(QWidget):
         elif kind == "skin":
             self.start_skin_change()
         elif kind == "folder":
+            play_effect(self.data.sfx(FOLDER_SFX), min(1.0, self.volume + 0.15))
             self.open_track_folder()
         elif kind == "playpause":
             if self.current is None and self.playlist:
