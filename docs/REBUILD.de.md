@@ -186,8 +186,10 @@ alle daran.
 ## Weiterhin nicht nachgebaut
 
 Das Launcher-Fenster — jenes, das beim Klick auf Spielen in Steam erscheint —
-gehört zu `ClientLauncherG.exe`. Seine Grafiken sind wiederherstellbar, und der
-Begleitknopf zeichnet bereits daraus, aber anders als die Jukebox hat es keine
-`.BUI`, das Layout müsste also von Hand vermessen werden. Was der Dump hergibt,
+gehört zu `ClientLauncherG.exe`. Seine Grafiken sind wiederherstellbar, und die
+Zeile, die dieses Projekt darunter setzt, ist aus eben diesen Bitmaps gebaut
+(siehe [`STEAM.de.md`](STEAM.de.md)) — aber anders als die Jukebox hat es keine
+`.BUI`, ein vollständiger Nachbau hieße also, das Layout von Hand zu
+vermessen. Was der Dump hergibt,
 steht unter „Noch offen" in [`JUKEBOX-UI.de.md`](JUKEBOX-UI.de.md), zusammen
 mit den beiden Teilen des `.BUI`-Formats, die noch nicht entschlüsselt sind.

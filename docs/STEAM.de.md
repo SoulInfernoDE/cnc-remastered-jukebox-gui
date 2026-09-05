@@ -12,9 +12,51 @@ Setze dazu die Startoptionen des Titels in Steam auf:
 ```
 
 Ein Klick auf Spielen startet das Spiel genau wie zuvor — derselbe Launcher,
-alles unverändert — daneben ein Jukebox-Knopf im Stil des Launchers, gezeichnet
-aus dessen eigenen Grafiken. Ein Klick öffnet die Jukebox; sie schließt sich
-mit dem Spiel.
+alles unverändert — nur mit einer zusätzlichen **Jukebox**-Zeile unten daran.
+Ein Klick öffnet die Jukebox.
+
+## Aus den Pixeln des Launchers gebaut
+
+Die Zeile ist keine Nachahmung. Die gesamte Oberfläche des Launchers liegt als
+unkomprimierte Bitmaps in den PE-Ressourcen von `ClientLauncherG.exe`, und die
+Zeile ist daraus gebaut: aus dem 130 Pixel hohen Streifen, der das Fenster nach
+unten abschließt — die Fuge über der letzten Schaltfläche, die Schaltflächen-
+zeile selbst, der genietete Rahmen darunter, samt Seitenschienen — mit
+ausgetauschtem Karteneditor-Feld.
+
+Aus diesem Feld kommt auch das Grün. Der Launcher färbt eine gemeinsame
+Rauschtextur je Spiel ein: Farbton 215 für den Tiberiumkonflikt, 22 für
+Alarmstufe Rot. Das Jukebox-Feld bekommt 120, die Farbe, die musikbezogene
+Dinge üblicherweise tragen. Auch die Stärke zählt: gemessen an der
+Durchschnittsfarbe des jeweiligen Rauschens liegt das Spiel bei Sättigung 47
+für sein Blau und 97 für sein Rot auf der 0–255-Skala von Qt, und dieses Grün
+landet bei 85 — innerhalb der Familie, statt daran vorbeizuschreien. Planet und
+Beschriftung werden durch das saubere Rauschen zu beiden Seiten ersetzt, sodass
+nichts vom Karteneditor durchscheint, und eingefärbt wird nur das Innere: die
+Metallfase bleibt genau das, was der Launcher gezeichnet hat.
+
+Vor der Beschriftung stehen die drei App-Symbole — Tiberiumkonflikt, Sowjets,
+Alliierte — von links nach rechts leicht überlappend, dasselbe Gehäuse, das die
+Jukebox in der Taskleiste trägt.
+
+## Sie folgt dem Launcher
+
+Das Launcher-Fenster lässt sich nichts fragen: es ist eine Windows-Anwendung
+unter Proton. Die Fensterverwaltung dagegen schon, und so wartet die Zeile, bis
+der Launcher wirklich auf dem Bildschirm steht, und legt sich dann über dessen
+unteren Rahmen, in seiner Breite und in seinem Maßstab. Die Naht verschwindet,
+und beides liest sich als ein einziges Fenster. Verschiebst du den Launcher,
+zieht die Zeile dreimal je Sekunde nach.
+
+Verschwindet der Launcher — weil ein Spiel gewählt oder das Fenster einfach
+geschlossen wurde — verschwindet die Zeile im selben Moment mit. Eine zuvor
+darüber geöffnete Jukebox läuft weiter: deshalb wird der Begleiter in einer
+eigenen Sitzung gestartet und nicht beim Beenden abgeräumt.
+
+Dafür braucht es X11. In einer Wayland-Sitzung kann niemand erfragen, wo das
+Fenster eines anderen Programms steht; dort weicht die Zeile nach einer
+Wartezeit in die untere rechte Bildschirmecke aus und lässt sich mit Escape
+schließen.
 
 ## Es bringt Steam nicht durcheinander
 
@@ -25,10 +67,12 @@ immer. Nichts wird gepatcht, ersetzt oder eingeschleust, und die Dateien des
 Spiels werden nie angefasst.
 
 Er ist außerdem ehrlich im Fehlerfall, und genau das bewahrt Steam davor,
-hängen zu bleiben. Getestet: ein normaler Lauf liefert 0 und der Knopf ist
-weg; ein fehlender Befehl liefert 127; ein Spiel, das mit 42 endet, reicht 42
-unverändert durch. In jedem Fall wird das Begleitfenster geschlossen, auf
-jedem Ausstiegsweg, auch beim Abschießen.
+hängen zu bleiben. Getestet: ein normaler Lauf liefert 0, ein fehlender Befehl
+127, und ein Spiel, das mit 42 endet, reicht 42 unverändert durch — in allen
+drei Fällen bleibt weder ein Fenster noch ein Begleitprozess zurück. Der
+Begleiter kennt die Prozessnummer des Wrappers und beendet sich, sobald diese
+verschwindet; er kann die Sitzung, die ihn angefordert hat, also selbst dann
+nicht überleben, wenn das Launcher-Fenster nie gefunden wird.
 
 > Geprüft, soweit ein einzelner Rechner das zulässt. Ob deine Freundesliste
 > „Im Spiel" anzeigt, ist Steams eigene Buchführung über den Prozess, den es

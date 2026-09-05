@@ -24,8 +24,11 @@ def main():
     ap.add_argument("--write-icon", metavar="PATH",
                     help="render the application icon to PATH and exit")
     ap.add_argument("--launcher-button", action="store_true",
-                    help="show only the small Jukebox button, for use beside "
+                    help="show only the Jukebox row, drawn onto the bottom of "
                          "the game's own launcher (see tools/steam-launch-wrapper)")
+    ap.add_argument("--launcher-pid", type=int, default=0,
+                    help="close the row when this process exits, whether or "
+                         "not the launcher window was ever found")
     args = ap.parse_args()
 
     try:
@@ -67,15 +70,24 @@ def main():
         return 0 if pm.save(args.write_icon) else 1
 
     if args.launcher_button:
+        from PyQt5.QtCore import QTimer
+        from PyQt5.QtGui import QFontDatabase
         from jukebox.assets import Atlas
-        from jukebox.launcher import LauncherArt, LauncherButton
-        from jukebox.ui import ACCENT, TRACK_ICON
-        art = LauncherArt(data.game_dir)
+        from jukebox.icon import pixmap as icon_pixmap
+        from jukebox.launcher import LauncherArt, LauncherPanel
+        from jukebox.ui import ACCENT, FONTS, SKIN_ORDER, TRACK_ICON
+
         atlas = Atlas(data.textures)
-        emblem = atlas.sprite(TRACK_ICON["Red_Alert"
-                                        if args.skin != "td" else "Tiberian_Dawn"])
-        button = LauncherButton(art, ACCENT.get(args.skin, ACCENT["soviet"]),
-                                emblem)
+        icons = [icon_pixmap(256, atlas.sprite(
+                     TRACK_ICON["Tiberian_Dawn" if s == "td" else "Red_Alert"]),
+                     ACCENT[s])
+                 for s in ("td",) + tuple(s for s in SKIN_ORDER if s != "td")]
+        fid = QFontDatabase.addApplicationFontFromData(
+            data.config.get(FONTS["orbitron"]) or b"")
+        fams = QFontDatabase.applicationFontFamilies(fid) if fid != -1 else []
+
+        panel = LauncherPanel(LauncherArt(data.game_dir), icons,
+                              fams[0] if fams else "DejaVu Sans")
         holder = {}
 
         def open_jukebox():
@@ -88,9 +100,34 @@ def main():
             holder["win"] = win
             win.show()
 
-        button.clicked.connect(open_jukebox)
-        button.place_beside_launcher()
-        button.show()
+        def stand_down():
+            """The launcher is gone.  So is this - but not a playing jukebox."""
+            panel.stop_following()
+            panel.close()
+            win = holder.get("win")
+            if win is None or not win.isVisible():
+                app.quit()
+
+        # The wrapper that started this exits when the game does.  Watching it
+        # covers the case where the launcher was never found, so the strip can
+        # never outlive the session that asked for it.
+        if args.launcher_pid:
+            def watch_parent():
+                try:
+                    os.kill(args.launcher_pid, 0)
+                except OSError:
+                    stand_down()
+            keeper = QTimer()
+            keeper.setInterval(1000)
+            keeper.timeout.connect(watch_parent)
+            keeper.start()
+
+        panel.clicked.connect(open_jukebox)
+        panel.launcherGone.connect(stand_down)
+        # Nothing is shown until the launcher's window is actually on screen,
+        # so the strip never appears on its own for a moment first.
+        panel.follow_launcher()
+        app.setQuitOnLastWindowClosed(True)
         return app.exec_()
 
     win = JukeboxWindow(data, args.skin)

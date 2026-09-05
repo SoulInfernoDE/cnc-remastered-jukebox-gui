@@ -63,8 +63,9 @@ gewöhnliches Steam, Flatpak, Snap und jede weitere Bibliothek, die in
 `libraryfolders.vdf` steht. `CNC_REMASTERED_DIR` überschreibt die Suche, falls
 sie fehlschlägt.
 
-Wie die Jukebox ins Anwendungsmenü kommt oder neben den Launcher des Spiels,
-wenn du in Steam auf Spielen klickst, steht in [`docs/STEAM.de.md`](docs/STEAM.de.md).
+Wie die Jukebox ins Anwendungsmenü kommt oder als Zeile an den unteren Rand des
+Spiel-Launchers, wenn du in Steam auf Spielen klickst, steht in
+[`docs/STEAM.de.md`](docs/STEAM.de.md).
 
 ## Die Jukebox
 

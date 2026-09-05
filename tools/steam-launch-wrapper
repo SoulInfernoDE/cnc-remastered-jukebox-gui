@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Puts a Jukebox button beside the game's own launcher, then starts the game.
+# Draws a Jukebox row onto the bottom of the game's own launcher, then starts
+# the game.
 #
 # Set it as the title's Steam launch options:
 #
@@ -9,8 +10,13 @@
 # Steam replaces %command% with the real launch command, which this script runs
 # unchanged and waits for - so the game starts exactly as before, and Steam
 # keeps tracking it: play time, the overlay and the "In-Game" state your
-# friends see all behave as they always did.  The button is closed with the
-# game.
+# friends see all behave as they always did.
+#
+# The row waits for the launcher's window to appear, sits on its bottom frame
+# so the two read as one window, and goes when the launcher goes - whether a
+# game was picked or the window was simply closed.  A jukebox opened from it
+# keeps playing, which is why the companion is started in its own session
+# rather than killed on the way out.
 #
 # It does not replace the launcher.  The launcher is a Windows executable that
 # runs before the game and reads no mod data, and ClientG.exe takes no
@@ -27,13 +33,20 @@ if [ ! -x "$jukebox" ]; then
     exec "$@"
 fi
 
-# Never let the companion window keep Steam waiting: it is killed on any exit.
-"$jukebox" --launcher-button &
-pid=$!
-trap 'kill "$pid" 2>/dev/null || true' EXIT INT TERM
+# Detached, so that music started from the row survives this script - and told
+# our pid, so that it closes itself if the launcher window is never found.
+if command -v setsid >/dev/null 2>&1; then
+    setsid "$jukebox" --launcher-button --launcher-pid $$ \
+        </dev/null >/dev/null 2>&1 &
+else
+    "$jukebox" --launcher-button --launcher-pid $$ \
+        </dev/null >/dev/null 2>&1 &
+fi
+companion=$!
 
 if [ "$#" -gt 0 ]; then
     "$@"
 else
-    wait "$pid"
+    # Nothing to run: this is the "just show me the row" case.
+    wait "$companion"
 fi

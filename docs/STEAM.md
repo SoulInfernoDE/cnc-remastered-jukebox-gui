@@ -12,9 +12,46 @@ Set the title's Steam launch options to:
 ```
 
 Press Play and the game starts exactly as before — same launcher, same
-everything — with a Jukebox button in the launcher's own style beside it, drawn
-from the launcher's own artwork. One click opens the jukebox; it closes with
-the game.
+everything — with a **Jukebox** row added to the bottom of it. One click opens
+the jukebox.
+
+## Made of the launcher's own pixels
+
+The row is not a lookalike. The launcher's whole interface sits in
+`ClientLauncherG.exe`'s PE resources as uncompressed bitmaps, and the row is
+built out of them: the 130-pixel strip that closes the window off — the seam
+above the last button, the button row itself, the riveted frame below it, side
+rails and all — with the Map Editor slot replaced.
+
+That slot is where the green comes from. The launcher tints one shared noise
+texture per game: hue 215 for Tiberian Dawn, 22 for Red Alert. The Jukebox slot
+gets 120, which is what a music button is coloured everywhere. How strongly
+matters too — measured on the mean colour of each slot's noise, the game sits
+at saturation 47 for its blue and 97 for its red on Qt's 0–255 scale, and this
+green lands on 85, inside the family rather than shouting past it. The planet
+and the lettering are replaced by the clean noise from either side of them, so
+nothing of the Map Editor shows through, and only the interior is tinted: the
+metal bevel stays exactly the pixels the launcher drew.
+
+In front of the label sit the three app icons — Tiberian Dawn, Soviet, Allied —
+overlapping left to right, the same cabinet the jukebox uses in the task bar.
+
+## It follows the launcher
+
+The launcher window cannot be asked anything: it is a Windows binary under
+Proton. The window manager can, though, so the row waits until the launcher is
+actually on screen, then places itself over its bottom frame, at its width and
+scaled to it. The seam disappears and the two read as a single window. Move the
+launcher and the row moves with it, three times a second.
+
+When the launcher goes — a game was picked, or the window was simply closed —
+the row goes with it, in the same moment. A jukebox opened from it keeps
+playing: that is why the companion is started in its own session rather than
+killed on the way out.
+
+This needs X11. Under a Wayland session nothing can ask where another
+program's window is, and the row falls back to the bottom-right corner of the
+screen after waiting; Escape closes it there.
 
 ## It does not disturb Steam
 
@@ -24,9 +61,11 @@ your friends see all behave as they always did. Nothing is patched, replaced or
 injected, and the game's own files are never touched.
 
 It is also transparent about failure, which is what keeps Steam from being left
-hanging. Tested: a normal run returns 0 and the button is gone; a missing
-command returns 127; a game exiting 42 passes 42 straight through. In every
-case the companion window is closed, on any exit path, including a kill.
+hanging. Tested: a normal run returns 0, a missing command returns 127, and a
+game exiting 42 passes 42 straight through — with no window and no companion
+process left behind in any of the three. The companion is told the wrapper's
+pid and closes itself when that goes, so it cannot outlive the session that
+asked for it even if the launcher window is never found.
 
 > Verified here as far as a single machine allows. Whether your friends list
 > shows "In-Game" is Steam's own bookkeeping about the process it started, and

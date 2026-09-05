@@ -18,10 +18,11 @@ installation, exactly as the textures and fonts are.
 import os
 import struct
 
-from PyQt5.QtCore import QRect, Qt, pyqtSignal
-from PyQt5.QtGui import (QBrush, QColor, QFont, QImage, QLinearGradient,
-                         QPainter, QPen)
+from PyQt5.QtCore import QRect, Qt, QTimer, pyqtSignal
+from PyQt5.QtGui import QColor, QFont, QImage, QPainter
 from PyQt5.QtWidgets import QApplication, QWidget
+
+from . import xwin
 
 RT_BITMAP = 2
 LAUNCHER_EXE = "ClientLauncherG.exe"
@@ -144,56 +145,125 @@ LAYOUT = {"td": (22, 278), "ra": (283, 278),
           "editor": (22, 494), "close": (524, 10)}
 BASE_SIZE = (560, 616)
 
-# The extra row this project adds.  The background is grown by repeating a
-# seam of bare inner panel, so the frame and the logo keep their proportions
-# instead of being stretched.  The seam is taken from the gap between the two
-# button rows, which is the only clean stretch of panel there is - cutting it
-# from just under the Map Editor slot drags that slot's edge along and the
-# repeat shows as stripes.
-SEAM_Y = 594                            # where the background is cut
-EXTRA_ROW = (22, 599, 515, 99)          # x, y, w, h of the Jukebox slot
+# The window the launcher opens, by title.  Both of its strings start this
+# way, and the localised builds keep the English product name.
+LAUNCHER_TITLE = r"Command\s*&\s*Conquer.*Remastered"
+
+# The Map Editor slot is the shape this project borrows: a full-width row at
+# the foot of the panel.  Its row runs y 494..593 of the 560x616 background,
+# with an 8-pixel seam above it and the 23 pixels below it that close the
+# window off.  Taking that whole 130-pixel strip as the base - rather than
+# stacking the pieces - keeps the side rails and rivets that run down its
+# edges, and the green slot then covers the Map Editor exactly.
+STRIP = (0, 486, 560, 130)              # seam, button row and closing frame
+SLOT_AT = (22, 8)                       # the slot's place within the strip
+CAP_H = 23                              # frame below the row, and the overlap
+PANEL_H = STRIP[3]                      # 130
+
+# Inside the Map Editor bitmap.  The bevel is six pixels; the label band
+# starts at 62; the planet occupies x 130..390, so the clean noise sits to
+# either side of it and the clean stretch of band is past the lettering.
+INNER = (6, 6, 502, 89)
+NOISE = ((12, 8, 116, 54), (392, 8, 116, 54))
+BAND = (430, 62, 70, 33)
+
+# Blue for Tiberian Dawn, red for Red Alert, and green here, which is what a
+# music button is coloured everywhere.  How strongly matters: measured on the
+# mean colour of each slot's noise, the game sits at saturation 47 for its
+# blue and 97 for its red, on the 0..255 scale Qt uses.  Multiplying the
+# slot's own greyscale by this tint lands on 85 - inside the family the
+# launcher already established, rather than shouting past it.
+GREEN = QColor(170, 255, 170)
 
 
-def extended_background(art, extra=EXTRA_ROW[3] + 12):
-    """The launcher background with room for one more button underneath.
+def green_slot(art, hovered=False):
+    """The Map Editor slot, cleared of its planet and lettering, in green.
 
-    The strip is filled with the panel's own median colour rather than a
-    repeated slice: every horizontal band of that background carries some
-    structure - a slot edge, a rivet line - and tiling any of them shows up as
-    ribbing.  A flat fill under the same inner shadow the real slots sit in is
-    both cleaner and closer to what the panel looks like between them.
+    The launcher tints each slot's noise by hue - 215 for Tiberian Dawn, 22
+    for Red Alert - over one shared texture.  This does the same thing to the
+    Map Editor's copy: the planet and the word are replaced by the clean noise
+    from either side of them, and only the interior is tinted, so the metal
+    bevel stays the colour the launcher drew it.
     """
-    bg = art.part("background")
-    if bg is None:
+    src = art.part("editor", hovered)
+    if src is None:
         return None
-    w, h = bg.width(), bg.height()
-    sample = bg.copy(QRect(30, 250, w - 60, 20)).scaled(1, 1)
-    panel = QColor(sample.pixel(0, 0))
-
-    out = QImage(w, h + extra, QImage.Format_ARGB32)
-    out.fill(0)
+    src = src.convertToFormat(QImage.Format_ARGB32)
+    inner = QRect(*INNER)
+    out = QImage(src)
     p = QPainter(out)
-    p.drawImage(QRect(0, 0, w, SEAM_Y), bg, QRect(0, 0, w, SEAM_Y))
+    p.setClipRect(inner)
 
-    strip = QRect(0, SEAM_Y, w, extra)
-    grad = QLinearGradient(0, strip.top(), 0, strip.bottom())
-    grad.setColorAt(0.0, panel.darker(118))
-    grad.setColorAt(0.45, panel)
-    grad.setColorAt(1.0, panel.darker(126))
-    p.fillRect(strip, QBrush(grad))
-    # The frame rails at either side carry on through the added strip.
-    p.drawImage(QRect(0, SEAM_Y, 22, extra), bg, QRect(0, 300, 22, extra))
-    p.drawImage(QRect(w - 22, SEAM_Y, 22, extra), bg,
-                QRect(w - 22, 300, 22, extra))
+    tiles = []
+    for box in NOISE:
+        t = src.copy(QRect(*box))
+        tiles += [t, t.mirrored(True, False)]    # mirrored, or the repeat shows
+    i, y = 0, inner.top()
+    while y < inner.bottom():
+        x = inner.left()
+        while x < inner.right():
+            p.drawImage(x, y, tiles[i % len(tiles)])
+            x += tiles[0].width()
+            i += 1
+        y += tiles[0].height()
+        i += 1
+    band = src.copy(QRect(*BAND))
+    x = inner.left()
+    while x < inner.right():
+        p.drawImage(x, BAND[1], band)
+        x += band.width()
+    p.end()
 
-    p.drawImage(QRect(0, SEAM_Y + extra, w, h - SEAM_Y), bg,
-                QRect(0, SEAM_Y, w, h - SEAM_Y))
+    tint = out.copy(inner).convertToFormat(QImage.Format_Grayscale8)
+    tint = tint.convertToFormat(QImage.Format_ARGB32)
+    p = QPainter(tint)
+    p.setCompositionMode(QPainter.CompositionMode_Multiply)
+    p.fillRect(tint.rect(), GREEN)
+    p.end()
+    p = QPainter(out)
+    p.drawImage(inner.topLeft(), tint)
     p.end()
     return out
 
 
-class LauncherButton(QWidget):
-    """A Jukebox button in the launcher's style, shown beside its window.
+# The three app icons, overlapping left to right in front of the label.
+ICON_SIDE = 84
+ICON_STEP = 44
+ICON_X = 8
+ICON_CY = 45
+LABEL_PX = 28
+
+
+def panel_image(art, icons, family, label, hovered=False):
+    """The strip that goes under the launcher: gap, green slot, closing frame."""
+    bg = art.part("background")
+    slot = green_slot(art, hovered)
+    if bg is None or slot is None:
+        return None
+    out = QImage(bg.copy(QRect(*STRIP))).convertToFormat(QImage.Format_ARGB32)
+    p = QPainter(out)
+    p.setRenderHint(QPainter.SmoothPixmapTransform, True)
+    p.setRenderHint(QPainter.Antialiasing, True)
+    ox, oy = SLOT_AT
+    p.drawImage(ox, oy, slot)
+    for i in reversed(range(len(icons))):     # the leftmost ends up on top
+        p.drawPixmap(QRect(ox + ICON_X + i * ICON_STEP,
+                           oy + ICON_CY - ICON_SIDE // 2,
+                           ICON_SIDE, ICON_SIDE), icons[i])
+    f = QFont(family)
+    f.setPixelSize(LABEL_PX)
+    f.setBold(True)
+    f.setLetterSpacing(QFont.PercentageSpacing, 115)
+    p.setFont(f)
+    p.setPen(QColor(238, 243, 238) if hovered else QColor(210, 216, 210))
+    p.drawText(QRect(ox + INNER[0], oy + BAND[1], INNER[2], BAND[3]),
+               Qt.AlignCenter, label)
+    p.end()
+    return out
+
+
+class LauncherPanel(QWidget):
+    """A Jukebox row drawn onto the bottom of the game's own launcher window.
 
     The launcher cannot be extended from inside: it is a Windows executable
     that runs before the game, reads no mod data, and the Steam Workshop for
@@ -202,59 +272,49 @@ class LauncherButton(QWidget):
     records the choice nowhere, so a stand-in chooser could only hand off to
     the real launcher and would put a second selection step in the way.
 
-    So this sits next to it instead: the game still starts exactly as before,
-    and the jukebox is one click from pressing Play.
+    So this follows it instead.  The window manager knows where the launcher
+    is, and this strip is placed over its bottom frame and carries its own,
+    which makes the two read as a single window.  When the launcher goes -
+    because a game was picked, or because it was closed - this goes with it.
     """
 
     clicked = pyqtSignal()
+    launcherGone = pyqtSignal()
 
-    def __init__(self, art, accent, emblem=None, parent=None):
-        super(LauncherButton, self).__init__(parent)
+    POLL_MS = 300
+    PATIENCE_MS = 40000       # how long to wait for a launcher to turn up
+
+    def __init__(self, art, icons, family, label="JUKEBOX", parent=None):
+        super(LauncherPanel, self).__init__(parent)
         self.art = art
-        self.accent = accent
-        self.emblem = emblem
+        self._plain = panel_image(art, icons, family, label, False)
+        self._lit = panel_image(art, icons, family, label, True)
         self._hover = False
-        self._panel = self._sample_panel()
+        self._seen = False
+        self._waited = 0
+        self._drag = None
+        self._moved = False
+        self.setWindowTitle("Jukebox")
         self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint |
-                            Qt.WindowStaysOnTopHint)
+                            Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setAttribute(Qt.WA_TranslucentBackground, False)
         self.setMouseTracking(True)
-        self.setFixedSize(232, 96)
+        self.setFixedSize(*BASE_SIZE[:1] + (PANEL_H,))
 
-    def _sample_panel(self):
-        bg = self.art.part("background") if self.art else None
-        if bg is None:
-            return QColor(34, 36, 38)
-        return QColor(bg.copy(QRect(30, 250, 500, 20)).scaled(1, 1).pixel(0, 0))
+        self._timer = QTimer(self)
+        self._timer.setInterval(self.POLL_MS)
+        self._timer.timeout.connect(self._follow)
 
+    # -- painting --------------------------------------------------------
     def paintEvent(self, _):
+        img = self._lit if self._hover else self._plain
         p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing, True)
-        r = self.rect()
-        grad = QLinearGradient(0, r.top(), 0, r.bottom())
-        grad.setColorAt(0.0, self._panel.lighter(118))
-        grad.setColorAt(0.5, self._panel)
-        grad.setColorAt(1.0, self._panel.darker(128))
-        p.setPen(QPen(QColor(12, 13, 14), 3))
-        p.setBrush(QBrush(grad))
-        p.drawRect(r.adjusted(1, 1, -2, -2))
-
-        slot = r.adjusted(9, 9, -10, -10)
-        p.setPen(QPen(QColor(150, 156, 162) if self._hover
-                      else QColor(92, 98, 104), 2))
-        p.setBrush(QColor(10, 11, 12, 210))
-        p.drawRect(slot)
-
-        if self.emblem is not None and not self.emblem.isNull():
-            side = slot.height() - 20
-            p.drawImage(QRect(slot.x() + 12, slot.center().y() - side // 2,
-                              side, side), self.emblem)
-        f = QFont(self.font())
-        f.setPixelSize(max(13, slot.height() // 3))
-        f.setBold(True)
-        p.setFont(f)
-        p.setPen(QColor(238, 238, 238) if self._hover else QColor(196, 200, 204))
-        p.drawText(slot.adjusted(slot.height() - 4, 0, -8, 0),
-                   Qt.AlignCenter, "JUKEBOX")
+        if img is None:
+            p.fillRect(self.rect(), QColor(28, 30, 32))
+            p.end()
+            return
+        p.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        p.drawImage(self.rect(), img)
         p.end()
 
     def enterEvent(self, _):
@@ -266,25 +326,74 @@ class LauncherButton(QWidget):
         self.update()
 
     def mousePressEvent(self, ev):
-        if ev.button() == Qt.LeftButton:
-            self._drag = ev.globalPos() - self.frameGeometry().topLeft()
-        else:
-            self._drag = None
+        self._moved = False
+        # While attached there is nowhere to drag to: the next poll would put
+        # it straight back under the launcher.  Loose, it can be moved.
+        self._drag = (ev.globalPos() - self.frameGeometry().topLeft()
+                      if ev.button() == Qt.LeftButton and not self._seen
+                      else None)
 
     def mouseMoveEvent(self, ev):
-        if getattr(self, "_drag", None) and ev.buttons() & Qt.LeftButton:
+        if self._drag and ev.buttons() & Qt.LeftButton:
+            self._moved = True
             self.move(ev.globalPos() - self._drag)
 
+    def keyPressEvent(self, ev):
+        # Only reachable when it is standing on its own; attached, it goes
+        # when the launcher goes.
+        if ev.key() == Qt.Key_Escape:
+            self.stop_following()
+            self.hide()
+            self.launcherGone.emit()
+        else:
+            super(LauncherPanel, self).keyPressEvent(ev)
+
     def mouseReleaseEvent(self, ev):
-        moved = getattr(self, "_moved", False)
-        self._drag = None
+        moved, self._moved, self._drag = self._moved, False, None
         if ev.button() == Qt.LeftButton and not moved:
             self.clicked.emit()
 
-    def place_beside_launcher(self):
-        """Bottom-right of the screen, clear of the launcher's own window."""
+    # -- following the launcher ------------------------------------------
+    def follow_launcher(self):
+        """Waits for the launcher window, then stays underneath it."""
+        self._follow()
+        self._timer.start()
+
+    def stop_following(self):
+        self._timer.stop()
+
+    def _follow(self):
+        geo = xwin.find_window(LAUNCHER_TITLE) if xwin.available() else None
+        if geo is None:
+            if self._seen:                       # it was there and now is not
+                self._timer.stop()
+                self.hide()
+                self.launcherGone.emit()
+                return
+            self._waited += self.POLL_MS
+            if self._waited >= self.PATIENCE_MS and not self.isVisible():
+                self.place_fallback()            # no launcher: stand on its own
+                self.show()
+            return
+        self._seen = True
+        self.attach(geo)
+        if not self.isVisible():
+            self.show()
+            self.raise_()
+
+    def attach(self, geo):
+        """Sit on the launcher's bottom frame, so the two look like one window."""
+        x, y, w, h = geo
+        scale = max(0.5, min(3.0, w / float(BASE_SIZE[0])))
+        ph = int(round(PANEL_H * scale))
+        self.setFixedSize(w, ph)
+        self.move(x, y + h - int(round(CAP_H * scale)))
+
+    def place_fallback(self):
+        """Bottom-right of the screen, for when the launcher cannot be found."""
         screen = QApplication.primaryScreen()
         if screen is None:
             return
         g = screen.availableGeometry()
+        self.setFixedSize(*BASE_SIZE[:1] + (PANEL_H,))
         self.move(g.right() - self.width() - 40, g.bottom() - self.height() - 60)

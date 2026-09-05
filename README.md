@@ -60,8 +60,9 @@ There is nothing to build. The game directory is found automatically —
 standard Steam, Flatpak, Snap, and any extra library listed in
 `libraryfolders.vdf`. `CNC_REMASTERED_DIR` overrides the search if that fails.
 
-To put the jukebox in your application menu, or beside the game's own launcher
-when you press Play in Steam, see [`docs/STEAM.md`](docs/STEAM.md).
+To put the jukebox in your application menu, or as a row on the bottom of the
+game's own launcher when you press Play in Steam, see
+[`docs/STEAM.md`](docs/STEAM.md).
 
 ## The jukebox
 

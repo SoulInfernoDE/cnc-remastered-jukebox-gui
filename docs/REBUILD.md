@@ -172,8 +172,9 @@ is built, since the layout, textures, fonts and window icon all come from it.
 ## Still not reproduced
 
 The launcher window — the one that appears when you press Play in Steam —
-belongs to `ClientLauncherG.exe`. Its artwork is recoverable and the companion
-button already draws from it, but unlike the jukebox it has no `.BUI`, so the
-layout would have to be measured by hand. What the dump yields is listed under
+belongs to `ClientLauncherG.exe`. Its artwork is recoverable and the row this
+project adds beneath it is drawn from those very bitmaps (see
+[`STEAM.md`](STEAM.md)), but unlike the jukebox it has no `.BUI`, so a full
+rebuild would mean measuring the layout by hand. What the dump yields is listed under
 "Still open" in [`JUKEBOX-UI.md`](JUKEBOX-UI.md), together with the two parts
 of the `.BUI` format that remain undecoded.
