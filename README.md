@@ -1,5 +1,7 @@
 # cnc-remastered-jukebox
 
+***English** · [Deutsch](README.de.md)*
+
 The music of the **Command & Conquer Remastered Collection**, outside the game.
 
 Two programs, both reading your own installation at runtime:
