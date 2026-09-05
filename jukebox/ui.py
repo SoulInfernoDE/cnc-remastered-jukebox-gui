@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import QWidget
 
 from .assets import Atlas, Textures
 from .audio import Player, play_effect
+from .catalog import KINDS, ObjectCatalog, SoundCatalog
 from .layout import Layout
 
 FONTS = {"francker": "DATA\\ART\\FONTS\\FRANCKERW1G-CONDENSEDREG.TTF",
@@ -228,6 +229,13 @@ class JukeboxWindow(QWidget):
         self._spin = 0.0                  # rotation of the playing track emblem
         self._build = None                # skin-change sequence, see _tick_build
         self._toast = None                # (started, text) confirmation
+        self.mode = "playlist"            # or "sounds" - the sound box
+        self._sounds = None               # catalogues, built on first use
+        self._objects = None
+        self.sel_sound = None
+        self.sel_object = None
+        self._frame_i = 0.0
+        self.show_vfx = False
 
         self._spin_timer = QTimer(self)
         self._spin_timer.setInterval(33)
@@ -271,12 +279,47 @@ class JukeboxWindow(QWidget):
         if self._build is not None:
             self._tick_build()
             busy = True
+        if self.mode == "sounds" and self.sel_object is not None:
+            self._frame_i += 0.35
+            busy = True
         if self._toast is not None:
             if time.monotonic() - self._toast[0] > TOAST_SECONDS:
                 self._toast = None
             busy = True
         if busy:
             self.update()
+
+    # -- the sound box ---------------------------------------------------
+    def sounds(self):
+        if self._sounds is None:
+            self._sounds = SoundCatalog(self.data)
+        return self._sounds
+
+    def objects(self):
+        if self._objects is None:
+            self._objects = ObjectCatalog(self.data)
+        return self._objects
+
+    @property
+    def sound_list(self):
+        games = [g for g, on in (("Tiberian_Dawn", self.filters["Tiberian_Dawn"]),
+                                 ("Red_Alert", self.filters["Red_Alert"])) if on]
+        fid = [f for f, on in (("Remaster", self.filters["Remaster"]),
+                               ("Classic", self.filters["Classic"])) if on]
+        return self.sounds().filtered(games, fid, KINDS)
+
+    @property
+    def object_list(self):
+        games = [g for g, on in (("Tiberian_Dawn", self.filters["Tiberian_Dawn"]),
+                                 ("Red_Alert", self.filters["Red_Alert"])) if on]
+        groups = ["Structures", "Units"] + (["Vfx"] if self.show_vfx else [])
+        return self.objects().filtered(games, groups)
+
+    def toggle_mode(self):
+        self.mode = "sounds" if self.mode == "playlist" else "playlist"
+        self.scroll["available"] = 0.0
+        self.scroll["playlist"] = 0.0
+        self.update()
 
     def sprite(self, key, w, h):
         """A skin sprite scaled to w x h, cached.  None when unavailable."""
@@ -500,13 +543,19 @@ class JukeboxWindow(QWidget):
 
     def _paint_header(self, p):
         t = self.data
-        self._text(p, self.r("title"), t.text("TEXT_JUKEBOX_PLAYLIST_EDITOR"),
-                   0.0345, TEXT, Qt.AlignHCenter | Qt.AlignVCenter)
-        r = self.r("notice")
+        if self.mode == "sounds":
+            title = "%s - %s" % (t.text("TEXT_AUDIO", "Audio"),
+                                 t.text("TEXT_MAIN_MENU_BONUS_CONTENT", ""))
+            notice = t.text("TEXT_OPTIONS_AUDIO_SFX", "")
+        else:
+            title = t.text("TEXT_JUKEBOX_PLAYLIST_EDITOR")
+            notice = t.text("TEXT_JUKEBOX_OVERRIDES_GAME_LOGIC_NOTIFICATION")
+        self._text(p, self.r("title"), title, 0.0345, TEXT,
+                   Qt.AlignHCenter | Qt.AlignVCenter)
         p.setFont(self.font(0.0135))
         p.setPen(TEXT_DIM)
-        p.drawText(r, Qt.AlignHCenter | Qt.AlignVCenter | Qt.TextWordWrap,
-                   t.text("TEXT_JUKEBOX_OVERRIDES_GAME_LOGIC_NOTIFICATION"))
+        p.drawText(self.r("notice"),
+                   Qt.AlignHCenter | Qt.AlignVCenter | Qt.TextWordWrap, notice)
 
     def _circle(self, spec):
         s = self.surface()
@@ -590,6 +639,9 @@ class JukeboxWindow(QWidget):
         return box, inner
 
     def _paint_lists(self, p):
+        if self.mode == "sounds":
+            self._paint_sound_box(p)
+            return
         t = self.data
         av, pl = self.available, self.playlist
         total_av = sum(x.seconds or 0 for x in av)
@@ -641,6 +693,112 @@ class JukeboxWindow(QWidget):
             self.hits.append(Hit(row, "row_" + which, track))
         p.restore()
         self._paint_scrollbar(p, which, len(items) * rh, inner.height())
+
+    def _group_label(self, group):
+        t = self.data
+        return {"Structures": t.text("TEXT_STRUCTURES", "Structures"),
+                "Units": t.text("TEXT_UNITS", "Units"),
+                "Vfx": "VFX"}.get(group, group)
+
+    def _paint_sound_box(self, p):
+        """Two catalogues side by side: the effects, and the animated objects.
+
+        Deliberately not one derived from the other - see catalog.py: the games
+        ship no mapping from a sound to "its" unit or building, so inventing
+        one would be the only way to pair them.
+        """
+        t = self.data
+        sounds = self.sound_list
+        objects = self.object_list
+        self._text(p, self.r("available_label"),
+                   "%s (%d)" % (t.text("TEXT_OPTIONS_AUDIO_SFX", "Audio"), len(sounds)),
+                   0.0165, TEXT)
+        self._text(p, self.r("playlist_label"),
+                   "%s / %s (%d)" % (t.text("TEXT_STRUCTURES", "Structures"),
+                                     t.text("TEXT_UNITS", "Units"), len(objects)),
+                   0.0165, TEXT_GREEN)
+
+        # Left: the sounds, with a heading whenever the group changes.
+        box, inner = self._list_geometry("available")
+        rh = self.row_height()
+        p.save()
+        p.setClipRect(inner)
+        first = int(self.scroll["available"] // rh)
+        y0 = inner.y() - int(self.scroll["available"] % rh)
+        for i in range(first, min(first + inner.height() // rh + 2, len(sounds))):
+            snd = sounds[i]
+            row = QRect(inner.x(), y0 + (i - first) * rh, inner.width(), rh)
+            if snd is self.sel_sound:
+                pm = self.sprite("row_hover", row.width(), row.height())
+                if pm is not None:
+                    p.drawPixmap(row, pm)
+                else:
+                    p.fillRect(row, QColor(self.accent.red(), self.accent.green(),
+                                           self.accent.blue(), 130))
+            icon = QRect(row.x() + 4, row.y() + 1, int(rh * 0.95), rh - 2)
+            if snd.game in TRACK_ICON:
+                self._paint_track_icon(p, icon, _IconTrack(snd.game == "Red_Alert"))
+            self._text(p, QRect(row.x() + int(rh * 1.3), row.y(),
+                                inner.width() - int(rh * 1.3) - 90, rh),
+                       snd.label, 0.0150, TEXT)
+            self._text(p, QRect(row.right() - 86, row.y(), 82, rh),
+                       snd.kind, 0.0135, TEXT_DIM,
+                       Qt.AlignRight | Qt.AlignVCenter, elide=False)
+            self.hits.append(Hit(row, "row_sound", snd))
+        p.restore()
+        self._paint_scrollbar(p, "available", len(sounds) * rh, inner.height())
+
+        # Right: the animation on top, the object list underneath.
+        pbox, pinner = self._list_geometry("playlist")
+        split = pinner.y() + int(pinner.height() * 0.56)
+        stage = QRect(pinner.x(), pinner.y(), pinner.width(), split - pinner.y())
+        self._paint_object_stage(p, stage)
+
+        lst = QRect(pinner.x(), split + 4, pinner.width(), pinner.bottom() - split - 4)
+        p.save()
+        p.setClipRect(lst)
+        first = int(self.scroll["playlist"] // rh)
+        y0 = lst.y() - int(self.scroll["playlist"] % rh)
+        for i in range(first, min(first + lst.height() // rh + 2, len(objects))):
+            obj = objects[i]
+            row = QRect(lst.x(), y0 + (i - first) * rh, lst.width(), rh)
+            if obj is self.sel_object:
+                p.fillRect(row, QColor(self.accent.red(), self.accent.green(),
+                                       self.accent.blue(), 130))
+            self._text(p, QRect(row.x() + 8, row.y(), row.width() - 110, rh),
+                       obj.label, 0.0150, TEXT)
+            self._text(p, QRect(row.right() - 104, row.y(), 100, rh),
+                       self._group_label(obj.group), 0.0135, TEXT_DIM,
+                       Qt.AlignRight | Qt.AlignVCenter, elide=False)
+            self.hits.append(Hit(row, "row_object", obj))
+        p.restore()
+        self._paint_scrollbar(p, "playlist", len(objects) * rh, lst.height())
+
+    def _paint_object_stage(self, p, stage):
+        p.fillRect(stage, QColor(0, 0, 0, 90))
+        if self.sel_object is None:
+            self._text(p, stage, self.data.text("TEXT_JUKEBOX_MODE", ""),
+                       0.0150, TEXT_DIM, Qt.AlignCenter)
+            return
+        frames = self.objects().frames(self.sel_object)
+        if not frames:
+            self._text(p, stage, self.sel_object.label, 0.020, TEXT_DIM,
+                       Qt.AlignCenter)
+            return
+        caption = int(stage.height() * 0.16)
+        img = frames[int(self._frame_i) % len(frames)]
+        scale = min(stage.width() / float(img.width()),
+                    (stage.height() - caption) / float(img.height()), 2.0)
+        w, h = int(img.width() * scale), int(img.height() * scale)
+        p.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        p.drawImage(QRect(stage.center().x() - w // 2,
+                          stage.y() + (stage.height() - caption - h) // 2, w, h), img)
+        self._text(p, QRect(stage.x(), stage.bottom() - caption,
+                            stage.width(), caption),
+                   "%s  -  %s  -  %d" % (self.sel_object.label,
+                                         self._group_label(self.sel_object.group),
+                                         len(frames)),
+                   0.0135, TEXT_DIM, Qt.AlignCenter)
 
     def _paint_track_icon(self, p, rect, track):
         """The game's own 28x28 emblem for the track's title, out of the atlas.
@@ -783,6 +941,8 @@ class JukeboxWindow(QWidget):
                    Qt.AlignCenter, elide=True)
 
     def _paint_transfer_buttons(self, p):
+        if self.mode == "sounds":
+            return
         t = self.data
         for key, kind, txt in (
                 ("btn_add", "add", "TEXT_ADD_SONG"),
@@ -797,8 +957,9 @@ class JukeboxWindow(QWidget):
         t = self.data
         for key, kind, txt, tip in (
                 ("btn_cancel", "exit", "TEXT_EXIT", None),
-                ("btn_apply", "apply", "TEXT_APPLY",
-                 t.text("TEXT_JUKEBOX_CUSTOM_PLAYLIST_TRACKS_WITH_COUNT"))):
+                ("btn_apply", "apply",
+                 "TEXT_BACK" if self.mode == "sounds" else "TEXT_APPLY",
+                 t.text("TEXT_OPTIONS_AUDIO_SFX", "Audio"))):
             rect = self.r(key)
             self._plate(p, rect, t.text(txt))
             self.hits.append(Hit(rect, kind, tip=tip))
@@ -833,6 +994,10 @@ class JukeboxWindow(QWidget):
                 ("filter_classic", "Classic", "TEXT_JUKEBOX_FILTER_CLASSIC"),
                 ("filter_bonus", "Bonus", "TEXT_JUKEBOX_FILTER_BONUS"))
         for key, flag, txt in rows:
+            if self.mode == "sounds" and flag == "Bonus":
+                self._checkbox(p, self.r(key + "_check"), self.show_vfx, "vfx")
+                self._text(p, self.r(key + "_text"), "VFX", 0.0165, TEXT)
+                continue
             self._checkbox(p, self.r(key + "_check"), self.filters[flag],
                            "filter:" + flag)
             label = self.r(key + "_text")
@@ -1119,6 +1284,9 @@ class JukeboxWindow(QWidget):
                 self.play(self.playlist[0])
             else:
                 self.player.toggle()
+        elif kind == "vfx":
+            self.show_vfx = not self.show_vfx
+            self.scroll["playlist"] = 0.0
         elif kind == "shuffle":
             self.shuffle = not self.shuffle
         elif kind.startswith("filter:"):
@@ -1131,14 +1299,17 @@ class JukeboxWindow(QWidget):
         elif kind.startswith("scroll_"):
             self._drag = kind
             self._drag_to(ev.pos())
+        elif kind == "row_sound":
+            self.sel_sound = h.data
+            play_effect(self.sounds().wav(h.data), min(1.0, self.volume + 0.15))
+        elif kind == "row_object":
+            self.sel_object = h.data
+            self._frame_i = 0.0
         elif kind == "apply":
             # Writes the playlist and settings out now and stays open.  The
             # window saves on close as well, so this is the deliberate
             # "keep it, I am done editing" and says so for a moment.
-            self.save()
-            self._toast = (t_now(), "%s (%d)" % (
-                self.data.text("TEXT_JUKEBOX_CUSTOM_PLAYLIST_TRACKS_WITH_COUNT"),
-                len(self.playlist)))
+            self.toggle_mode()
         elif kind == "exit":
             # Let EVA sign off before the window goes.
             self._play_sfx(self.skin, "exit")

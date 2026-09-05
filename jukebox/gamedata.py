@@ -295,6 +295,23 @@ class GameData(object):
                     return raw
         return None
 
+    def _sfx_list(self):
+        """The sound archives, opened once and kept."""
+        self.sfx("")                       # forces the lazy open
+        return self._sfx_megs or []
+
+    def texture_archive(self, filename):
+        """One of the per-game texture archives, opened on first use."""
+        if not hasattr(self, "_tex_cache"):
+            self._tex_cache = {}
+        if filename not in self._tex_cache:
+            path = os.path.join(self._data_dir, filename)
+            try:
+                self._tex_cache[filename] = Meg(path) if os.path.isfile(path) else None
+            except GameDataError:
+                self._tex_cache[filename] = None
+        return self._tex_cache[filename]
+
     # -- where the game keeps user content -------------------------------
     def user_dir(self):
         """The game's own Documents folder, inside the Proton prefix.

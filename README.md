@@ -85,12 +85,30 @@ turn.
 The playlist, filters, volume and chosen skin are kept in
 `~/.config/cnc-jukebox/playlist.json`.
 
-**Exit** closes the jukebox, with EVA signing off in that game's own voice. **Apply** writes the playlist and settings out
-there and then and stays open, confirming with the number of tracks it stored.
-The window saves on close as well, so Apply is the deliberate "keep this, I am
-done editing". In the game that button hands the playlist to the battle that
-follows; standing on its own there is nothing to hand it to, so it commits the
-file instead.
+**Exit** closes the jukebox, with EVA signing off in that game's own voice.
+**Apply** opens the sound box. The playlist and settings are written on close
+either way.
+
+### The sound box
+
+Two catalogues read from the installation, side by side:
+
+- **Left** — every effect in the game, 1286 of them, grouped by game, fidelity
+  and kind, and played on click. Spoken lines show what they actually say:
+  the string table files those under `TEXT_SFX_<stem>` with the `EVA_`/`UNT_`
+  part dropped, which covers 369 of them. Only the classic-prefix keys are
+  translated, so those are preferred; where the game itself never translated a
+  line it stays English here too, exactly as in the game.
+- **Right** — 409 units, structures and effects, each animated from its own
+  sprite frames. The archives keep them as one zip of uncompressed TGA per
+  object, listed by `TD_UNITS.XML` and friends; only the selected object is
+  decoded, downscaled, and kept.
+
+They sit side by side rather than one deriving the other, and that is
+deliberate: **the games ship no mapping from a sound to "its" unit or
+building.** Checking all 508 sound stems against all 192 object names yields
+no match at all, and the few substring hits are coincidence. Pairing them
+would mean inventing the pairing.
 
 ### The three header controls
 
