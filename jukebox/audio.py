@@ -252,3 +252,31 @@ class Player(QObject):
 
     def set_volume(self, v):
         self._volume = max(0.0, min(1.0, v))          # picked up by the pump
+
+
+def play_effect(wav_bytes, volume=0.9):
+    """Fires off one short sound and returns at once.
+
+    Used for the interface effects, which must not disturb the music: the
+    decode and the write both happen on a worker thread, and nothing is kept.
+    """
+    cmd = _sink_command()
+    if cmd is None or not wav_bytes:
+        return
+
+    def work():
+        try:
+            pcm = decode(wav_bytes)
+        except Exception:
+            return
+        if volume < 0.999:
+            pcm = _gain(pcm, volume)
+        try:
+            p = subprocess.Popen(cmd, stdin=subprocess.PIPE,
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+            p.communicate(pcm, timeout=30)
+        except Exception:
+            pass
+
+    threading.Thread(target=work, daemon=True).start()

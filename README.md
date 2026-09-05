@@ -65,13 +65,31 @@ null device without saying so. Tracks are decoded with ffmpeg and written to
 
 ## Using it
 
+The window is frameless, so only the jukebox itself is on screen. Drag it by
+any empty part of the panel; Escape or the *Back* button closes it, F11 toggles
+fullscreen, Space toggles playback.
+
 Left-click a track to select it, right-click to move it between the two lists,
 double-click to play. The four plate buttons, the filters, shuffle, the gap and
 volume sliders and the progress bar all behave as they do in the game. The
-playlist, filters and volume are kept in
+emblem of the track currently playing turns while it plays.
+
+The playlist, filters, volume and chosen skin are kept in
 `~/.config/cnc-jukebox/playlist.json`.
 
-Space toggles playback, F11 toggles fullscreen, Escape closes.
+### The three header controls
+
+Hover any of them for a hint.
+
+- **Left bolt** — opens this project on GitHub.
+- **Folder** — opens the soundtrack folder, drawn in the current skin's colour.
+  That is the same folder `cnc_trackexport` writes to by default.
+- **Right bolt** — changes the skin, the way the game puts up a building: the
+  next faction's emblem appears across the whole player, EVA announces the
+  construction, a build clock sweeps once around over three seconds, the
+  "construction complete" line plays, and the new skin drops in with that
+  game's building-placement sound. Each of those is the game's own audio, in
+  your language, from `SFX2D_<LANG>.MEG` and `SFX3D.MEG`.
 
 ## Alongside the game
 
@@ -177,7 +195,7 @@ Flatpak, Snap, and any extra library listed in `libraryfolders.vdf`.
   -h, --help         help
 ```
 
-`CNC_REMASTERED_DIR` overrides the search if autodetection fails.
+`CNC_REMASTERED_DIR` overrides the search if autodetection fails.\n\nBy default the tracks go to the game's own user folder — `Documents/CnCRemastered/Soundtrack` inside the Proton prefix, next to\n`Mods`, `Save` and `Replays`, which Steam leaves alone on updates. The\njukebox's folder button opens exactly that directory. Use `--out` for\nsomewhere else.
 
 By default the tracks go to the game's own user folder —
 `Documents/CnCRemastered/Soundtrack` inside the Proton prefix, next to `Mods`,

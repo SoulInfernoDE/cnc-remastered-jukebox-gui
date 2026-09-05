@@ -14,6 +14,8 @@ import threading
 MEG_MAGIC = 0x3F7D70A4
 
 XML_PATH = "DATA\\XML\\AUDIO\\AUDIO_SYSTEM_CONSTANTS.XML"
+# SFX3D.MEG and SFX2D_ALL.MEG store bare names; SFX2D_<LANG>.MEG nests them
+# under the language and repeats it in the filename.
 LOC_PATH = "DATA\\TEXT\\MASTERTEXTFILE_{}.LOC"
 
 # The nine languages the game ships, and how a POSIX locale maps onto them.
@@ -201,6 +203,8 @@ class GameData(object):
         self.config = Meg(os.path.join(data, "CONFIG.MEG"))
         self.music = Meg(os.path.join(data, "MUSIC.MEG"))
         self.textures = Meg(os.path.join(data, "TEXTURES_SRGB.MEG"))
+        self._data_dir = data
+        self._sfx_megs = None
 
         have = [l for l in LANGUAGES
                 if self.config.get(LOC_PATH.format(l)) is not None]
@@ -264,3 +268,58 @@ class GameData(object):
 
     def track_wav(self, track):
         return self.music.read(track.offset, track.size)
+
+    # -- sound effects ---------------------------------------------------
+    def sfx(self, stem):
+        """One effect by its stem, e.g. "TDR_SFX_CONSTRU2".
+
+        Spoken EVA lines live in SFX2D_<LANG>.MEG and carry a language suffix;
+        the rest sit in SFX3D.MEG and SFX2D_ALL.MEG without one.  Returns the
+        WAV bytes, or None.
+        """
+        if self._sfx_megs is None:
+            self._sfx_megs = []
+            for name in ("SFX3D.MEG", "SFX2D_ALL.MEG",
+                         "SFX2D_%s.MEG" % self.language):
+                path = os.path.join(self._data_dir, name)
+                if os.path.isfile(path):
+                    try:
+                        self._sfx_megs.append(Meg(path))
+                    except GameDataError:
+                        pass
+        for wanted in ("%s.WAV" % stem,
+                       "%s\\%s_%s.WAV" % (self.language, stem, self.language)):
+            for meg in self._sfx_megs:
+                raw = meg.get(wanted)
+                if raw is not None:
+                    return raw
+        return None
+
+    # -- where the game keeps user content -------------------------------
+    def user_dir(self):
+        """The game's own Documents folder, inside the Proton prefix.
+
+        Steam leaves this alone on updates, unlike the install directory, so
+        exported tracks belong here rather than next to the archives.
+        """
+        marker = os.path.join("steamapps", "common", "CnCRemastered")
+        root = self.game_dir
+        if root.endswith(marker):
+            base = root[:-len(marker)]
+            pfx = os.path.join(base, "steamapps", "compatdata", "1213210",
+                               "pfx", "drive_c", "users", "steamuser",
+                               "Documents", "CnCRemastered")
+            if os.path.isdir(pfx):
+                return pfx
+        return None
+
+    def soundtrack_dir(self):
+        """Where the exporter should put the tracks, creating nothing."""
+        base = self.user_dir()
+        if base:
+            return os.path.join(base, "Soundtrack")
+        music = os.path.expanduser("~/Music")
+        for env in ("XDG_MUSIC_DIR",):
+            if os.environ.get(env):
+                music = os.environ[env]
+        return os.path.join(music, "C&C Remastered Soundtrack")

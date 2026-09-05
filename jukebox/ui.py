@@ -10,7 +10,10 @@ maps straight onto the rendered surface.
 
 import json
 import os
+import math
 import random
+import subprocess
+import time
 
 from PyQt5.QtCore import QPoint, QRect, QRectF, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import (QBrush, QColor, QFont, QFontDatabase, QFontMetrics,
@@ -18,7 +21,7 @@ from PyQt5.QtGui import (QBrush, QColor, QFont, QFontDatabase, QFontMetrics,
 from PyQt5.QtWidgets import QWidget
 
 from .assets import Atlas, Textures
-from .audio import Player
+from .audio import Player, play_effect
 from .layout import Layout
 
 FONTS = {"francker": "DATA\\ART\\FONTS\\FRANCKERW1G-CONDENSEDREG.TTF",
@@ -80,6 +83,34 @@ SPRITES = {
 }
 TRACK_ICON = {"Tiberian_Dawn": "UI_JUKEBOX_CNCTD_ICON.TGA",
               "Red_Alert": "UI_JUKEBOX_CNCRA_ICON.TGA"}
+
+# The faction emblem shown while a skin is "under construction".
+SKIN_LOGO = {"td": "UI_SIDEBAR_FACTIONLOGO_GDI.TGA",
+             "soviet": "UI_SIDEBAR_FACTIONLOGO_SOVIET.TGA",
+             "allied": "UI_SIDEBAR_FACTIONLOGO_ALLIES.TGA"}
+
+# Each game's own construction sounds, by stem; see GameData.sfx().
+SKIN_SFX = {
+    "td":     {"building": "TDR_SFX_EVA_BLDGING1",
+               "complete": "TDR_SFX_EVA_CONSTRU1",
+               "place":    "TDR_SFX_CONSTRU2"},
+    "soviet": {"building": "RAR_SFX_EVA_ABLDGIN1",
+               "complete": "RAR_SFX_EVA_CONSCMP1",
+               "place":    "RAR_SFX_PLACBLDG"},
+    "allied": {"building": "RAR_SFX_EVA_ABLDGIN1",
+               "complete": "RAR_SFX_EVA_CONSCMP1",
+               "place":    "RAR_SFX_PLACBLDG"},
+}
+SKIN_ORDER = ("soviet", "allied", "td")
+BUILD_SECONDS = 3.0
+
+# The two brass bolts on the header plate, measured on the background texture
+# (centres and radius, normalised against it).
+BOLT_LEFT = (0.06613, 0.07131, 0.01574)
+BOLT_RIGHT = (0.93325, 0.07264, 0.01620)
+FOLDER_BUTTON = (0.12500, 0.07131, 0.01500)
+
+PROJECT_URL = "https://github.com/SoulInfernoDE/cnc-remastered-jukebox"
 SLIDER_MINUS = "UI_OPTIONS_SLIDERBAR_MINUS.TGA"
 SLIDER_PLUS = "UI_OPTIONS_SLIDERBAR_PLUS.TGA"
 
@@ -115,12 +146,12 @@ class _IconTrack(object):
 
 
 class Hit(object):
-    """A rectangle that reacts to the mouse."""
+    """A rectangle that reacts to the mouse, optionally with a hover hint."""
 
-    __slots__ = ("rect", "kind", "data")
+    __slots__ = ("rect", "kind", "data", "tip")
 
-    def __init__(self, rect, kind, data=None):
-        self.rect, self.kind, self.data = rect, kind, data
+    def __init__(self, rect, kind, data=None, tip=None):
+        self.rect, self.kind, self.data, self.tip = rect, kind, data, tip
 
 
 class JukeboxWindow(QWidget):
@@ -165,7 +196,21 @@ class JukeboxWindow(QWidget):
         self.player.trackFinished.connect(self._advance)
         self.player.failed.connect(self._on_audio_error)
 
+        self._drag_window = None          # offset while dragging the window
+        self._hover = None                # Hit under the cursor
+        self._spin = 0.0                  # rotation of the playing track emblem
+        self._build = None                # skin-change sequence, see _tick_build
+
+        self._spin_timer = QTimer(self)
+        self._spin_timer.setInterval(33)
+        self._spin_timer.timeout.connect(self._on_spin)
+        self._spin_timer.start()
+
         self._restore()
+        # Frameless, so only the jukebox itself is on screen.  Dragging is
+        # handled in the mouse events below.
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, False)
         self.setMouseTracking(True)
         self.setMinimumSize(880, 660)
         self.resize(1240, 930)
@@ -188,6 +233,18 @@ class JukeboxWindow(QWidget):
             "orbitron" if self.skin != "td" else "francker",
             self.font_families.get("francker", "DejaVu Sans"))
         self._cjk_family = self.font_families.get("cjk", "")
+
+    def _on_spin(self):
+        """Turns the emblem of the playing track, and drives the build clock."""
+        busy = False
+        if self.player.state == "playing" and self.current is not None:
+            self._spin = (self._spin + 4.0) % 360.0
+            busy = True
+        if self._build is not None:
+            self._tick_build()
+            busy = True
+        if busy:
+            self.update()
 
     def sprite(self, key, w, h):
         """A skin sprite scaled to w x h, cached.  None when unavailable."""
@@ -275,6 +332,50 @@ class JukeboxWindow(QWidget):
         self.player.load(self.data.track_wav(track))
         self.update()
 
+    # -- changing the skin, the way the game puts up a building -----------
+    def start_skin_change(self):
+        """Building sound, faction emblem under a build clock, then the swap."""
+        if self._build is not None:
+            return
+        nxt = SKIN_ORDER[(SKIN_ORDER.index(self.skin) + 1) % len(SKIN_ORDER)]
+        self._build = {"t0": time.monotonic(), "target": nxt, "stage": 0}
+        self._play_sfx(nxt, "building")
+        self.update()
+
+    def _play_sfx(self, skin, which):
+        stem = SKIN_SFX.get(skin, {}).get(which)
+        if stem:
+            play_effect(self.data.sfx(stem), min(1.0, self.volume + 0.15))
+
+    def _tick_build(self):
+        b = self._build
+        if b is None:
+            return
+        elapsed = time.monotonic() - b["t0"]
+        if b["stage"] == 0 and elapsed >= BUILD_SECONDS:
+            b["stage"] = 1                       # clock full: construction done
+            self._play_sfx(b["target"], "complete")
+            b["t0"] = time.monotonic()
+        elif b["stage"] == 1 and elapsed >= 0.9:
+            target = b["target"]
+            self._build = None
+            self.apply_skin(target)
+            self._play_sfx(target, "place")      # the building goes down
+
+    def apply_skin(self, name):
+        if name not in SKIN_BUI:
+            return
+        self.skin = name
+        self.accent = ACCENT[name]
+        self.layout_ = Layout(self.data.config.get(SKIN_BUI[name]))
+        self.bg_img, self.scan_img = self.tex.skin(name)
+        self.menu_img = self.tex.menu_background(name)
+        self._bg_cache = self._scan_cache = self._menu_cache = None
+        self._sprite_cache = {}
+        self._load_fonts()
+        self.save()
+        self.update()
+
     def _on_audio_error(self, msg):
         self._status = msg
         self.update()
@@ -345,11 +446,14 @@ class JukeboxWindow(QWidget):
 
         self.hits = []
         self._paint_header(p)
+        self._paint_chrome(p)
         self._paint_lists(p)
         self._paint_transfer_buttons(p)
         self._paint_options(p)
         self._paint_now_playing(p)
         self._paint_footer(p)
+        self._paint_build_overlay(p)
+        self._paint_tooltip(p)
         p.end()
 
     def _text(self, p, rect, s, frac, color=TEXT, align=Qt.AlignLeft | Qt.AlignVCenter,
@@ -370,6 +474,63 @@ class JukeboxWindow(QWidget):
         p.setPen(TEXT_DIM)
         p.drawText(r, Qt.AlignHCenter | Qt.AlignVCenter | Qt.TextWordWrap,
                    t.text("TEXT_JUKEBOX_OVERRIDES_GAME_LOGIC_NOTIFICATION"))
+
+    def _circle(self, spec):
+        s = self.surface()
+        cx = s.x() + spec[0] * s.width()
+        cy = s.y() + spec[1] * s.height()
+        r = spec[2] * s.width()
+        return QRect(int(cx - r), int(cy - r), int(2 * r), int(2 * r))
+
+    def _paint_chrome(self, p):
+        """The two bolts and the folder button, as hit areas over the skin.
+
+        The bolts are part of the background texture, so nothing is drawn over
+        them - only a soft ring while hovered, to show they can be used.
+        """
+        t = self.data
+        left = self._circle(BOLT_LEFT)
+        right = self._circle(BOLT_RIGHT)
+        for rect, kind, tip in (
+                (left, "github", t.text("TEXT_JUKEBOX", "Jukebox") + " - GitHub"),
+                (right, "skin", self._skin_tip())):
+            hovered = self._hover is not None and self._hover.kind == kind
+            if hovered:
+                p.setPen(QPen(QColor(255, 220, 130, 200), max(2, rect.width() // 10)))
+                p.setBrush(Qt.NoBrush)
+                p.drawEllipse(rect.adjusted(-3, -3, 3, 3))
+            self.hits.append(Hit(rect, kind, tip=tip))
+
+        folder = self._circle(FOLDER_BUTTON)
+        self._paint_folder(p, folder,
+                           self._hover is not None and self._hover.kind == "folder")
+        self.hits.append(Hit(folder, "folder", tip=self.data.soundtrack_dir()))
+
+    def _skin_tip(self):
+        nxt = SKIN_ORDER[(SKIN_ORDER.index(self.skin) + 1) % len(SKIN_ORDER)]
+        names = {"td": self.data.text("TEXT_JUKEBOX_FILTER_TD"),
+                 "soviet": self.data.text("TEXT_JUKEBOX_FILTER_RA"),
+                 "allied": self.data.text("TEXT_JUKEBOX_FILTER_RA")}
+        side = {"soviet": " (Soviet)", "allied": " (Allied)", "td": ""}
+        return names.get(nxt, nxt) + side.get(nxt, "")
+
+    def _paint_folder(self, p, rect, hovered):
+        """A folder drawn in the skin's own accent colour."""
+        p.save()
+        p.setRenderHint(QPainter.Antialiasing, True)
+        c = self.accent.lighter(150) if hovered else self.accent
+        w, h = rect.width(), rect.height()
+        body = QRectF(rect.x(), rect.y() + h * 0.26, w, h * 0.60)
+        tab = QRectF(rect.x(), rect.y() + h * 0.14, w * 0.44, h * 0.18)
+        p.setPen(QPen(QColor(18, 18, 20), max(1, w // 14)))
+        p.setBrush(c.darker(140))
+        p.drawRoundedRect(tab, w * 0.06, w * 0.06)
+        p.setBrush(c)
+        p.drawRoundedRect(body, w * 0.08, w * 0.08)
+        p.setPen(QPen(c.lighter(170), max(1, w // 16)))
+        p.drawLine(int(body.left() + w * 0.14), int(body.top() + h * 0.14),
+                   int(body.right() - w * 0.14), int(body.top() + h * 0.14))
+        p.restore()
 
     def _list_geometry(self, which):
         box = self.r(which + "_list")
@@ -443,7 +604,16 @@ class JukeboxWindow(QWidget):
         box = QRect(rect.x(), rect.y() + (rect.height() - side) // 2, side, side)
         pm = self.sprite(TRACK_ICON.get(track.game, ""), side, side)
         if pm is not None:
-            p.drawPixmap(box, pm)
+            spin = (track is self.current and self.player.state == "playing")
+            if spin:
+                p.save()
+                p.setRenderHint(QPainter.SmoothPixmapTransform, True)
+                p.translate(box.center())
+                p.rotate(self._spin)
+                p.drawPixmap(QRect(-side // 2, -side // 2, side, side), pm)
+                p.restore()
+            else:
+                p.drawPixmap(box, pm)
             return
         p.save()
         p.setRenderHint(QPainter.Antialiasing, True)
@@ -679,6 +849,83 @@ class JukeboxWindow(QWidget):
             p.drawRect(QRect(bar.x(), bar.y(), w, bar.height()))
         self.hits.append(Hit(self.r("progress_hit"), "seek"))
 
+    def _paint_build_overlay(self, p):
+        """The faction emblem under a build clock while the skin is changing.
+
+        The clock is the one from the sidebar: a dark wedge that sweeps once
+        around from the top, uncovering the emblem as it goes.
+        """
+        b = self._build
+        if b is None:
+            return
+        s = self.surface()
+        p.fillRect(self.rect(), QColor(0, 0, 0, 150))
+
+        side = int(min(s.width(), s.height()) * 0.55)
+        box = QRect(s.center().x() - side // 2, s.center().y() - side // 2, side, side)
+        pm = self.sprite(SKIN_LOGO.get(b["target"], ""), side, side)
+        if pm is not None:
+            p.drawPixmap(box, pm)
+
+        if b["stage"] == 0:
+            frac = min(1.0, (time.monotonic() - b["t0"]) / BUILD_SECONDS)
+            clock = QRect(box)
+            clock.adjust(-box.width() // 12, -box.height() // 12,
+                         box.width() // 12, box.height() // 12)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(0, 0, 0, 205))
+            # Qt angles count 1/16 degree counter-clockwise from 3 o'clock, so
+            # the wedge starts at the top and retreats clockwise.
+            start = int((90 - 360.0 * frac) * 16)
+            span = int(-360.0 * (1.0 - frac) * 16)
+            p.drawPie(clock, start, span)
+            # The leading edge, so the sweep is readable at a glance.
+            ang = math.radians(90 - 360.0 * frac)
+            cx, cy = clock.center().x(), clock.center().y()
+            rx, ry = clock.width() / 2.0, clock.height() / 2.0
+            p.setPen(QPen(self.accent.lighter(160), max(2, clock.width() // 110)))
+            p.drawLine(cx, cy, int(cx + math.cos(ang) * rx),
+                       int(cy - math.sin(ang) * ry))
+            p.setBrush(Qt.NoBrush)
+            p.setPen(QPen(QColor(255, 255, 255, 70), max(1, clock.width() // 200)))
+            p.drawEllipse(clock)
+
+        label = self.data.text("TEXT_JUKEBOX_FILTER_TD" if b["target"] == "td"
+                               else "TEXT_JUKEBOX_FILTER_RA")
+        self._text(p, QRect(s.x(), box.bottom() + int(s.height() * 0.02),
+                            s.width(), int(s.height() * 0.05)),
+                   label, 0.030, TEXT, Qt.AlignCenter)
+
+    def _paint_tooltip(self, p):
+        h = self._hover
+        if h is None or not h.tip:
+            return
+        p.setFont(self.font(0.0145))
+        fm = QFontMetrics(p.font())
+        pad = max(6, int(self.height() * 0.008))
+        w = fm.horizontalAdvance(h.tip) + 2 * pad
+        ht = fm.height() + pad
+        x = min(max(4, h.rect.center().x() - w // 2), self.width() - w - 4)
+        y = h.rect.bottom() + 6
+        if y + ht > self.height():
+            y = h.rect.top() - ht - 6
+        box = QRect(x, y, w, ht)
+        p.setPen(QPen(QColor(20, 20, 22), 2))
+        p.setBrush(QColor(16, 16, 18, 235))
+        p.drawRoundedRect(box, 3, 3)
+        p.setPen(TEXT)
+        p.drawText(box, Qt.AlignCenter, h.tip)
+
+    def open_track_folder(self):
+        path = self.data.soundtrack_dir()
+        try:
+            os.makedirs(path, exist_ok=True)
+            subprocess.Popen(["xdg-open", path], stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        except OSError as e:
+            self._status = str(e)
+            self.update()
+
     # -- interaction -----------------------------------------------------
     def _hit(self, pos):
         for h in reversed(self.hits):
@@ -689,6 +936,10 @@ class JukeboxWindow(QWidget):
     def mousePressEvent(self, ev):
         h = self._hit(ev.pos())
         if h is None:
+            # Nothing interactive here: start moving the frameless window.
+            if ev.button() == Qt.LeftButton:
+                self._drag_window = (ev.globalPos() -
+                                     self.frameGeometry().topLeft())
             return
         kind = h.kind
         right = ev.button() == Qt.RightButton
@@ -716,6 +967,13 @@ class JukeboxWindow(QWidget):
             self._remove(self.sel_playlist)
         elif kind == "remove_all":
             self.playlist = []
+        elif kind == "github":
+            subprocess.Popen(["xdg-open", PROJECT_URL],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif kind == "skin":
+            self.start_skin_change()
+        elif kind == "folder":
+            self.open_track_folder()
         elif kind == "playpause":
             if self.current is None and self.playlist:
                 self.play(self.playlist[0])
@@ -749,12 +1007,26 @@ class JukeboxWindow(QWidget):
         self.update()
 
     def mouseMoveEvent(self, ev):
+        if self._drag_window is not None and ev.buttons() & Qt.LeftButton:
+            self.move(ev.globalPos() - self._drag_window)
+            return
         if self._drag:
             self._drag_to(ev.pos())
+            self.update()
+            return
+        was = self._hover
+        self._hover = self._hit(ev.pos())
+        if was is not self._hover:
+            self.update()
+
+    def leaveEvent(self, _):
+        if self._hover is not None:
+            self._hover = None
             self.update()
 
     def mouseReleaseEvent(self, _):
         self._drag = None
+        self._drag_window = None
 
     def _drag_to(self, pos):
         kind = self._drag
