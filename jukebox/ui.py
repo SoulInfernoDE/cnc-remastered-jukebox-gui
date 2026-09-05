@@ -114,6 +114,7 @@ SKIN_SFX = {
 SKIN_ORDER = ("soviet", "allied", "td")
 BUILD_SECONDS = 3.0
 TOAST_SECONDS = 1.8
+STAGE_FRACTION = 0.56            # of the right panel, given to the animation
 EXIT_DELAY_MS = 900              # long enough for EVA to start signing off
 EMBLEM_THICKNESS = 0.30          # rim depth as a fraction of the emblem width
 EMBLEM_MIN_FACE = 0.10           # the face never squeezes to nothing
@@ -717,6 +718,44 @@ class JukeboxWindow(QWidget):
                    int(body.right() - w * 0.14), int(body.top() + h * 0.14))
         p.restore()
 
+    def _scroll_geometry(self, which):
+        """Content height, visible rect and bar for one of the two lists.
+
+        The wheel, the bar and the drawing all read this, so they cannot
+        disagree about which list is showing or how much of it fits - which
+        they did: the handlers used the music lists in either mode, and the
+        right-hand bar was drawn down the whole panel while its list only
+        occupied the part below the animation.
+        """
+        _, inner = self._list_geometry(which)
+        bar = self.r(which + "_scroll")
+        if self.mode == "sounds":
+            if which == "available":
+                count = len(self.sound_list)
+            else:
+                count = len(self.object_list)
+                split = inner.y() + int(inner.height() * STAGE_FRACTION)
+                inner = QRect(inner.x(), split + 4,
+                              inner.width(), inner.bottom() - split - 4)
+                bar = QRect(bar.x(), inner.y(), bar.width(), inner.height())
+        else:
+            count = len(self.available if which == "available" else self.playlist)
+        return count * self.row_height(), inner, bar
+
+    def _knob(self, which):
+        """Knob height and the distance it can travel, or (0, 0)."""
+        content, view, bar = self._scroll_geometry(which)
+        if content <= view.height() or bar.height() <= 0:
+            return 0, 0
+        knob_h = max(18, int(bar.height() * view.height() / float(content)))
+        return knob_h, max(1, bar.height() - knob_h)
+
+    def _clamp_scroll(self, which):
+        content, view, _ = self._scroll_geometry(which)
+        limit = max(0.0, content - view.height())
+        self.scroll[which] = max(0.0, min(self.scroll[which], limit))
+        return limit
+
     def _list_geometry(self, which):
         box = self.r(which + "_list")
         inner = QRect(box.x() + 4, box.y() + 3,
@@ -778,7 +817,7 @@ class JukeboxWindow(QWidget):
                        Qt.AlignRight | Qt.AlignVCenter, elide=False)
             self.hits.append(Hit(row, "row_" + which, track))
         p.restore()
-        self._paint_scrollbar(p, which, len(items) * rh, inner.height())
+        self._paint_scrollbar(p, which)
 
     def _group_label(self, group):
         t = self.data
@@ -832,15 +871,13 @@ class JukeboxWindow(QWidget):
                        Qt.AlignRight | Qt.AlignVCenter, elide=False)
             self.hits.append(Hit(row, "row_sound", snd))
         p.restore()
-        self._paint_scrollbar(p, "available", len(sounds) * rh, inner.height())
+        self._paint_scrollbar(p, "available")
 
         # Right: the animation on top, the object list underneath.
-        pbox, pinner = self._list_geometry("playlist")
-        split = pinner.y() + int(pinner.height() * 0.56)
-        stage = QRect(pinner.x(), pinner.y(), pinner.width(), split - pinner.y())
+        _, pinner = self._list_geometry("playlist")
+        _, lst, _ = self._scroll_geometry("playlist")
+        stage = QRect(pinner.x(), pinner.y(), pinner.width(), lst.y() - 4 - pinner.y())
         self._paint_object_stage(p, stage)
-
-        lst = QRect(pinner.x(), split + 4, pinner.width(), pinner.bottom() - split - 4)
         p.save()
         p.setClipRect(lst)
         first = int(self.scroll["playlist"] // rh)
@@ -858,7 +895,7 @@ class JukeboxWindow(QWidget):
                        Qt.AlignRight | Qt.AlignVCenter, elide=False)
             self.hits.append(Hit(row, "row_object", obj))
         p.restore()
-        self._paint_scrollbar(p, "playlist", len(objects) * rh, lst.height())
+        self._paint_scrollbar(p, "playlist")
 
     def _paint_object_stage(self, p, stage):
         p.fillRect(stage, QColor(0, 0, 0, 90))
@@ -985,18 +1022,17 @@ class JukeboxWindow(QWidget):
         slab(near_z * sn, pm, 0.80 + 0.20 * abs(c))
         p.restore()
 
-    def _paint_scrollbar(self, p, which, content_h, view_h):
-        if content_h <= view_h:
-            return                                   # nothing to scroll
-        bar = self.r(which + "_scroll")
+    def _paint_scrollbar(self, p, which):
+        content_h, view, bar = self._scroll_geometry(which)
+        limit = self._clamp_scroll(which)          # filters shrink the content
+        if limit <= 0 or bar.height() <= 0:
+            return                                 # nothing to scroll
         p.fillRect(bar, QColor(0, 0, 0, 90))
-        frac = view_h / float(content_h)
-        knob_h = max(18, int(bar.height() * frac))
-        maxscroll = content_h - view_h
-        pos = int((bar.height() - knob_h) * (self.scroll[which] / maxscroll))
-        knob = QRect(bar.x() + 1, bar.y() + pos, bar.width() - 2, knob_h)
-        p.fillRect(knob, self.accent)
-        self.hits.append(Hit(bar, "scroll_" + which, (content_h, view_h)))
+        knob_h, travel = self._knob(which)
+        pos = int(travel * (self.scroll[which] / limit))
+        p.fillRect(QRect(bar.x() + 1, bar.y() + pos, bar.width() - 2, knob_h),
+                   self.accent)
+        self.hits.append(Hit(bar, "scroll_" + which))
 
     # -- buttons ---------------------------------------------------------
     def _plate(self, p, rect, label, enabled=True):
@@ -1472,24 +1508,23 @@ class JukeboxWindow(QWidget):
                 self.player.seek(f * dur)
         elif kind.startswith("scroll_"):
             which = kind.split("_", 1)[1]
-            bar = self.r(which + "_scroll")
-            items = self.available if which == "available" else self.playlist
-            _, inner = self._list_geometry(which)
-            content = len(items) * self.row_height()
-            if content > inner.height():
-                f = max(0.0, min(1.0, (pos.y() - bar.y()) / float(bar.height())))
-                self.scroll[which] = f * (content - inner.height())
+            _, _, bar = self._scroll_geometry(which)
+            limit = self._clamp_scroll(which)
+            knob_h, travel = self._knob(which)
+            if limit > 0 and travel > 0:
+                # The knob follows the cursor, so both ends are reachable -
+                # mapping the cursor onto the whole bar instead leaves the last
+                # knob-length unreachable.
+                top = pos.y() - bar.y() - knob_h / 2.0
+                self.scroll[which] = max(0.0, min(1.0, top / travel)) * limit
 
     def wheelEvent(self, ev):
         for which in ("available", "playlist"):
-            box, inner = self._list_geometry(which)
+            box, _ = self._list_geometry(which)
             if box.contains(ev.pos()):
-                items = self.available if which == "available" else self.playlist
-                content = len(items) * self.row_height()
+                limit = self._clamp_scroll(which)
                 step = ev.angleDelta().y() / 120.0 * self.row_height() * 3
-                self.scroll[which] = max(
-                    0.0, min(max(0.0, content - inner.height()),
-                             self.scroll[which] - step))
+                self.scroll[which] = max(0.0, min(limit, self.scroll[which] - step))
                 self.update()
                 return
 
