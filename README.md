@@ -74,14 +74,18 @@ double-click to play. The four plate buttons, the filters, shuffle, the gap and
 volume sliders and the progress bar all behave as they do in the game.
 
 The emblem of the track currently playing turns while it plays, as a struck
-token rather than a sheet of paper: the face is foreshortened while copies of
-the emblem's own outline fill the thickness behind it, the nearest slice lit,
-so edge-on it shows a solid rim instead of disappearing.
+token rather than a sheet of paper. Rotating a plane about its vertical axis
+puts a point at `x·cos θ + z·sin θ`, so the token's front face keeps its
+centre, its back face lands at `-T·sin θ`, the material fills the span between
+them, and past 90 degrees the face we see is the back one — mirrored, offset,
+and with the draw order reversed because that plane has come nearer. Deriving
+all of it from the one angle is what makes it read as a single continuous
+turn.
 
 The playlist, filters, volume and chosen skin are kept in
 `~/.config/cnc-jukebox/playlist.json`.
 
-**Exit** closes the jukebox. **Apply** writes the playlist and settings out
+**Exit** closes the jukebox, with EVA signing off in that game's own voice. **Apply** writes the playlist and settings out
 there and then and stays open, confirming with the number of tracks it stored.
 The window saves on close as well, so Apply is the deliberate "keep this, I am
 done editing". In the game that button hands the playlist to the battle that
@@ -90,12 +94,15 @@ file instead.
 
 ### The three header controls
 
-Hover any of them for a hint.
+Hover any of them for a hint. Red Alert's header carries round brass bolts and
+Tiberian Dawn's carries hex heads, sitting higher and further out, so the hover
+outline follows the shape and position each skin actually has — measured on the
+textures rather than assumed.
 
-- **Left bolt** — opens this project on GitHub.
+- **Left fastener** — opens this project on GitHub.
 - **Folder** — opens the soundtrack folder, drawn in the current skin's colour.
   That is the same folder `cnc_trackexport` writes to by default.
-- **Right bolt** — changes the skin, the way the game puts up a building: the
+- **Right fastener** — changes the skin, the way the game puts up a building: the
   next faction's emblem appears across the whole player, EVA announces the
   construction, a build clock sweeps once around over three seconds, the
   "construction complete" line plays, and the new skin drops in with that

@@ -91,29 +91,46 @@ SKIN_LOGO = {"td": "UI_SIDEBAR_FACTIONLOGO_GDI.TGA",
 
 # Each game's own construction sounds, by stem; see GameData.sfx().
 SKIN_SFX = {
+    # "Battle control terminated" is filed under different stems in the two
+    # games, which is why the exit line is listed per skin like the rest.
     "td":     {"building": "TDR_SFX_EVA_BLDGING1",
                "complete": "TDR_SFX_EVA_CONSTRU1",
-               "place":    "TDR_SFX_CONSTRU2"},
+               "place":    "TDR_SFX_CONSTRU2",
+               "exit":     "TDR_SFX_EVA_BATLCON1"},
     "soviet": {"building": "RAR_SFX_EVA_ABLDGIN1",
                "complete": "RAR_SFX_EVA_CONSCMP1",
-               "place":    "RAR_SFX_PLACBLDG"},
+               "place":    "RAR_SFX_PLACBLDG",
+               "exit":     "RAR_SFX_EVA_BCT1"},
     "allied": {"building": "RAR_SFX_EVA_ABLDGIN1",
                "complete": "RAR_SFX_EVA_CONSCMP1",
-               "place":    "RAR_SFX_PLACBLDG"},
+               "place":    "RAR_SFX_PLACBLDG",
+               "exit":     "RAR_SFX_EVA_BCT1"},
 }
 SKIN_ORDER = ("soviet", "allied", "td")
 BUILD_SECONDS = 3.0
 TOAST_SECONDS = 1.8
+EXIT_DELAY_MS = 900              # long enough for EVA to start signing off
 EMBLEM_THICKNESS = 0.30          # rim depth as a fraction of the emblem width
 EMBLEM_MIN_FACE = 0.10           # the face never squeezes to nothing
 EMBLEM_BODY = QColor(74, 58, 34)   # the extruded material
 EMBLEM_EDGE = QColor(150, 122, 68)  # its lit near edge
 
-# The two brass bolts on the header plate, measured on the background texture
-# (centres and radius, normalised against it).
-BOLT_LEFT = (0.06613, 0.07131, 0.01574)
-BOLT_RIGHT = (0.93325, 0.07264, 0.01620)
-FOLDER_BUTTON = (0.12500, 0.07131, 0.01500)
+# The header fasteners, measured on each background texture: centre and radius
+# normalised against it, plus the shape they actually are.  Red Alert uses
+# round brass bolts (both skins are pixel-identical here); Tiberian Dawn uses
+# hex heads, sitting higher and further out, so the hover outline has to be a
+# hexagon there rather than a ring.
+FASTENERS = {
+    "soviet": {"left": (0.06613, 0.07131, 0.01574),
+               "right": (0.93325, 0.07264, 0.01620),
+               "shape": "round", "folder": (0.12500, 0.07131, 0.01500)},
+    "allied": {"left": (0.06613, 0.07131, 0.01574),
+               "right": (0.93325, 0.07264, 0.01620),
+               "shape": "round", "folder": (0.12500, 0.07131, 0.01500)},
+    "td":     {"left": (0.05850, 0.07200, 0.01250),
+               "right": (0.93900, 0.07050, 0.01250),
+               "shape": "hex", "folder": (0.11400, 0.07100, 0.01450)},
+}
 
 PROJECT_URL = "https://github.com/SoulInfernoDE/cnc-remastered-jukebox"
 SLIDER_MINUS = "UI_OPTIONS_SLIDERBAR_MINUS.TGA"
@@ -498,26 +515,43 @@ class JukeboxWindow(QWidget):
         r = spec[2] * s.width()
         return QRect(int(cx - r), int(cy - r), int(2 * r), int(2 * r))
 
-    def _paint_chrome(self, p):
-        """The two bolts and the folder button, as hit areas over the skin.
+    def _hex_path(self, rect):
+        """A flat-topped hexagon inscribed in rect, matching the hex heads."""
+        path = QPainterPath()
+        cx, cy = rect.center().x(), rect.center().y()
+        rx, ry = rect.width() / 2.0, rect.height() / 2.0
+        for i in range(6):
+            ang = math.radians(30 + 60 * i)
+            x, y = cx + math.cos(ang) * rx, cy - math.sin(ang) * ry
+            path.moveTo(x, y) if i == 0 else path.lineTo(x, y)
+        path.closeSubpath()
+        return path
 
-        The bolts are part of the background texture, so nothing is drawn over
-        them - only a soft ring while hovered, to show they can be used.
+    def _paint_chrome(self, p):
+        """The two fasteners and the folder button, as hit areas over the skin.
+
+        The fasteners are part of the background texture, so nothing is drawn
+        over them - only an outline while hovered, following their real shape.
         """
         t = self.data
-        left = self._circle(BOLT_LEFT)
-        right = self._circle(BOLT_RIGHT)
+        spec = FASTENERS[self.skin]
+        left = self._circle(spec["left"])
+        right = self._circle(spec["right"])
         for rect, kind, tip in (
                 (left, "github", t.text("TEXT_JUKEBOX", "Jukebox") + " - GitHub"),
                 (right, "skin", self._skin_tip())):
-            hovered = self._hover is not None and self._hover.kind == kind
-            if hovered:
-                p.setPen(QPen(QColor(255, 220, 130, 200), max(2, rect.width() // 10)))
+            if self._hover is not None and self._hover.kind == kind:
+                p.setPen(QPen(QColor(255, 220, 130, 205),
+                              max(2, rect.width() // 10)))
                 p.setBrush(Qt.NoBrush)
-                p.drawEllipse(rect.adjusted(-3, -3, 3, 3))
+                grown = rect.adjusted(-3, -3, 3, 3)
+                if spec["shape"] == "hex":
+                    p.drawPath(self._hex_path(grown))
+                else:
+                    p.drawEllipse(grown)
             self.hits.append(Hit(rect, kind, tip=tip))
 
-        folder = self._circle(FOLDER_BUTTON)
+        folder = self._circle(spec["folder"])
         self._paint_folder(p, folder,
                            self._hover is not None and self._hover.kind == "folder")
         self.hits.append(Hit(folder, "folder", tip=self.data.soundtrack_dir()))
@@ -658,22 +692,30 @@ class JukeboxWindow(QWidget):
         return hit
 
     def _paint_spinning_emblem(self, p, box, pm, deg):
-        """Turns the emblem about its vertical axis as a solid, thick token.
+        """Turns the emblem about its vertical axis as a solid, struck token.
 
-        A plain 2D rotation reads as a sheet of paper.  What gives an object
-        depth is that it is extruded: the face is foreshortened by cos, while
-        behind it sit opaque copies of its own silhouette spread across the
-        thickness.  Because those follow the emblem's alpha rather than a
-        bounding box, the shape stays the emblem's own instead of becoming a
-        slab.  A lighter copy at the near edge catches the light, so edge-on
-        the token reads as thick metal rather than disappearing.  Past 90
-        degrees cos turns negative and the back face is mirrored, as a struck
-        token would be.
+        Rotating a plane by theta about Y and projecting orthographically puts
+        a point (x, z) at screen x*cos(theta) + z*sin(theta).  The token spans
+        z from 0 (front face) to -T (back face), so:
+
+          * the front face keeps its centre at 0,
+          * the back face's centre sits at -T*sin(theta),
+          * the material fills the span between the two,
+          * and the face we actually see is the front while cos(theta) > 0 and
+            the back once it turns negative - at which point it is both
+            mirrored and offset, and the draw order reverses because the back
+            plane has come nearer than the front.
+
+        Deriving the offset and the ordering from the same angle is what makes
+        this read as one continuous turn.  Scaling the face alone does not: the
+        face would mirror at 90 degrees while the body only changed sides at
+        180, and the eye reads that mismatch as a wobble rather than a spin.
         """
-        c = math.cos(math.radians(deg))
-        sn = math.sin(math.radians(deg))
+        rad = math.radians(deg)
+        c, sn = math.cos(rad), math.sin(rad)
         w, h = box.width(), box.height()
-        depth = abs(sn) * max(2.5, w * EMBLEM_THICKNESS)
+        thick = max(2.5, w * EMBLEM_THICKNESS)
+        back_x = -thick * sn                 # where the far face lands
         squeeze = c if abs(c) > EMBLEM_MIN_FACE else (
             EMBLEM_MIN_FACE if c >= 0 else -EMBLEM_MIN_FACE)
 
@@ -681,27 +723,28 @@ class JukeboxWindow(QWidget):
         p.setRenderHint(QPainter.SmoothPixmapTransform, True)
         p.translate(box.center())
         target = QRect(-w // 2, -h // 2, w, h)
-        direction = -1.0 if sn >= 0 else 1.0
 
-        if depth > 0.5:
-            body = self._tinted(pm, EMBLEM_BODY)
-            edge = self._tinted(pm, EMBLEM_EDGE)
-            layers = max(4, int(depth * 1.6))
-            for i in range(layers, 0, -1):
-                t = i / float(layers)
-                p.save()
-                p.translate(direction * depth * t, 0.0)
-                p.scale(squeeze, 1.0)
-                # The far-most slice catches the light, giving the rim a
-                # highlight instead of a flat block of shadow.
-                p.drawPixmap(target, edge if i == layers else body)
-                p.restore()
+        def slab(x, pixmap, opacity=1.0):
+            p.save()
+            p.translate(x, 0.0)
+            p.scale(squeeze, 1.0)
+            p.setOpacity(opacity)
+            p.drawPixmap(target, pixmap)
+            p.restore()
 
-        p.save()
-        p.scale(squeeze, 1.0)
-        p.setOpacity(0.80 + 0.20 * abs(c))
-        p.drawPixmap(target, pm)
-        p.restore()
+        body = self._tinted(pm, EMBLEM_BODY)
+        edge = self._tinted(pm, EMBLEM_EDGE)
+        layers = max(4, int(abs(back_x) * 1.6))
+        showing_back = c < 0
+        face_x = back_x if showing_back else 0.0
+        # Slices from the far plane to the near one.  Which plane is far
+        # depends on the sign of cos, so the sweep reverses with it.
+        steps = [i / float(layers) for i in range(layers, -1, -1)]
+        if showing_back:
+            steps.reverse()
+        for k, t in enumerate(steps):
+            slab(back_x * t, edge if k == len(steps) - 1 else body)
+        slab(face_x, pm, 0.80 + 0.20 * abs(c))
         p.restore()
 
     def _paint_scrollbar(self, p, which, content_h, view_h):
@@ -1009,6 +1052,10 @@ class JukeboxWindow(QWidget):
         p.setPen(TEXT)
         p.drawText(box, Qt.AlignCenter, h.tip)
 
+    def _finish_exit(self):
+        self.closed.emit()
+        self.close()
+
     def open_track_folder(self):
         path = self.data.soundtrack_dir()
         try:
@@ -1093,8 +1140,9 @@ class JukeboxWindow(QWidget):
                 self.data.text("TEXT_JUKEBOX_CUSTOM_PLAYLIST_TRACKS_WITH_COUNT"),
                 len(self.playlist)))
         elif kind == "exit":
-            self.closed.emit()
-            self.close()
+            # Let EVA sign off before the window goes.
+            self._play_sfx(self.skin, "exit")
+            QTimer.singleShot(EXIT_DELAY_MS, self._finish_exit)
         self.update()
 
     def mouseDoubleClickEvent(self, ev):
