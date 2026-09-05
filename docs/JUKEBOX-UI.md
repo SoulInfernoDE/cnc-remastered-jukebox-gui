@@ -170,14 +170,93 @@ straight through the panels.
 They load straight into Qt with `QFontDatabase::addApplicationFontFromData`,
 so the rebuild matches the original typography without shipping a font.
 
+## The shared sprite atlas
+
+The layouts name sprites such as `ui_jukebox_cnctd_icon` that exist as a file
+in **no** archive — a full inventory of all 22 `.MEG` files (61 571 entries)
+turns up nothing, and neither does a PE resource dump of `ClientG.exe`.  They
+live in a shared UI atlas.
+
+A full-text scan of every non-media archive entry (4 613 files, 47 MiB) finds
+the name in exactly one place: `MT_COMMANDBAR_COMMON.MTD`, the index for
+`MT_COMMANDBAR_COMMON.TGA` — a 6871 x 6716, 176 MiB uncompressed 32-bit TGA
+with bottom-left origin.
+
+### MTD index
+
+```
+uint32  0xFFFFFFFE                 magic
+int32   count                      1554 entries
+count x {
+    uint32  namelen
+    char    name[namelen]          NUL-terminated inside the field
+    int32   rect[8]                x, y, w, h, 0, 0, w, h   (y from the top)
+    uint8   pad
+}
+```
+
+The record is 33 bytes past the name, not 32: there is a single padding byte
+after the eight integers.  Parsed that way the file is consumed exactly, with
+no bytes left over.
+
+The atlas is far too large to hold in memory, but a sprite needs only its own
+rows, so the reader seeks straight into the archive and reads `h` runs of
+`w * 4` bytes.
+
+### What the jukebox uses from it
+
+| Sprite | Size |
+| --- | --- |
+| `UI_JUKEBOX_CNCTD_ICON`, `UI_JUKEBOX_CNCRA_ICON` | 28x28 |
+| `UI_RA_JUKEBOX_PAUSEPLAY_BTN_NORMAL/HOVERED/PRESSED` | 97x86 |
+| `UI_JUKEBOX_PLAYPAUSE_BTN_ON/HOVER` | 65x59 |
+| `RA_UI_JUKEBOX_HOVERSTATE_SOVIET/ALLIED` | 866x47 |
+| `RA_UI_JUKEBOX_SLIDERBAR_FILL_SOVIET/ALLIED` | 546x15 |
+| `UI_JUKEBOX_MUSIC_TIMER_FILL` | 363x11 |
+
+plus the shared checkbox, main-button and slider-ball families
+(`RA_UI_OPTIONS_CHECK_BOX_*`, `UI_OPTIONS_CHECK_BOX_*`, `RA_UI_MAINBTN_*`,
+`UI_BUTTON_MAIN_08_*`, `*_SLIDERBAR_BALL`, `*_SLIDERBAR_MINUS/PLUS`).
+
+## Anchors and margins
+
+The compact property block holds three candidates beyond the rectangle.
+Measured across **all 207 `.BUI` files in the game, 7318 widgets**:
+
+| Tag | Length | What it is | Distribution |
+| --- | --- | --- | --- |
+| `0x07` | 4 | sizing mode, horizontal | values 0-7; 4 in 87.5 % |
+| `0x12` | 4 | sizing mode, vertical | values 0-5; 3 in 86.3 % |
+| `0x26` | 16 | margin, four floats | non-zero on 518 widgets (7 %) |
+
+`0x26` is a **pixel** margin, not a normalised one: the values that occur are
+small integers such as `(2, 2, 2, 2)`, `(4, 4, 0, 0)`, `(0, 8, 0, 0)` and
+`(0, -6, 0, 0)`.
+
+The pair `(0x07, 0x12)` is `(4, 3)` for 85.8 % of all widgets.  In the jukebox
+the only departures are `(1, 1)` on the text labels and `(7, 5)` on
+`Background` / `Background_Darken` — the two widgets whose rectangle
+deliberately overflows its parent (`-0.17188, 0, 1.34375, 1.0`) to cover the
+whole screen.
+
+### What this means for a rebuild
+
+Across the six jukebox layouts, 139 widgets, **every margin is zero** and
+every anchor is the default except those six screen-covering backgrounds.  So
+the jukebox scales purely proportionally, and resolving the normalised
+rectangles against a 4:3 surface is not an approximation — it is what the
+layout says.  That is why the geometry matched the game on the first attempt.
+
 ## Still open
 
-- The binary widget stream is only partly decoded: rectangles, names, colours
-  and texture references read out cleanly, but anchors, nine-slice metrics and
-  the parent/child links do not.  The ancestry is therefore declared by hand.
-- `ui_jukebox_cnctd_icon` and `ui_jukebox_cncra_icon` are named by the layouts
-  but are in none of the shipped texture archives, under that name or any
-  obvious variant.  Where they actually come from is unresolved.
-- The point sizes in the layouts ("46 Point Outline", "18 Point Outline") are
-  read as style names only; the rebuild sizes text as a fraction of the window
-  height instead, tuned against the game's own screens.
+- The wide property block after each widget's name (uint32 tag, uint32 length)
+  is not decoded.  It holds the name and at least tags `0x13`, `0x14` and
+  `0x27`, and lengths there sometimes carry a high-bit flag.  The parent/child
+  links are presumably in it; the ancestry is still declared by hand.
+- The point sizes in the layouts ("46 Point Outline") are read as style names
+  only; text is sized as a fraction of the window height instead.
+- **The launcher window can be rebuilt after all.**  A PE resource dump of
+  `ClientLauncherG.exe` yields its whole interface: a 560x616 background, four
+  255x208 game buttons (normal and hover), two 30x30 close buttons and two
+  515x99 map-editor buttons, all as uncompressed 24-bit DIBs.  Only the layout
+  would have to be measured, since there is no `.BUI` for it.

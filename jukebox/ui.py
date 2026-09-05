@@ -17,6 +17,7 @@ from PyQt5.QtGui import (QBrush, QColor, QFont, QFontDatabase, QFontMetrics,
                          QLinearGradient, QPainter, QPainterPath, QPen, QPixmap)
 from PyQt5.QtWidgets import QWidget
 
+from .assets import Atlas, Textures
 from .audio import Player
 from .layout import Layout
 
@@ -38,6 +39,49 @@ TEXT = QColor(222, 222, 222)
 TEXT_DIM = QColor(165, 165, 165)
 TEXT_GREEN = QColor(90, 210, 90)
 GOLD = QColor(232, 176, 46)
+
+# Sprites from MT_COMMANDBAR_COMMON, the shared UI atlas.  The jukebox layouts
+# name these but they exist in no archive as files of their own; see
+# docs/JUKEBOX-UI.md.
+SPRITES = {
+    "soviet": {
+        "button":      "RA_UI_MAINBTN_NORMAL.TGA",
+        "button_hot":  "RA_UI_MAINBTN_SELECTED.TGA",
+        "check_on":    "RA_UI_OPTIONS_CHECK_BOX_CHECK.TGA",
+        "check_off":   "RA_UI_OPTIONS_CHECK_BOX_UNCHECKED.TGA",
+        "fill":        "RA_UI_JUKEBOX_SLIDERBAR_FILL_SOVIET.TGA",
+        "ball":        "RA_UI_OPTIONS_SLIDERBAR_BALL.TGA",
+        "play":        "UI_RA_JUKEBOX_PAUSEPLAY_BTN_NORMAL.TGA",
+        "play_hot":    "UI_RA_JUKEBOX_PAUSEPLAY_BTN_HOVERED.TGA",
+        "row_hover":   "RA_UI_JUKEBOX_HOVERSTATE_SOVIET.TGA",
+    },
+    "allied": {
+        "button":      "RA_UI_MAINBTN_NORMAL.TGA",
+        "button_hot":  "RA_UI_MAINBTN_SELECTED.TGA",
+        "check_on":    "RA_UI_OPTIONS_CHECK_BOX_CHECK_ALLIED.TGA",
+        "check_off":   "RA_UI_OPTIONS_CHECK_BOX_UNCHECKED_ALLIED.TGA",
+        "fill":        "RA_UI_JUKEBOX_SLIDERBAR_FILL_ALLIED.TGA",
+        "ball":        "RA_UI_OPTIONS_SLIDERBAR_BALL_BLUE.TGA",
+        "play":        "UI_RA_JUKEBOX_PAUSEPLAY_BTN_NORMAL.TGA",
+        "play_hot":    "UI_RA_JUKEBOX_PAUSEPLAY_BTN_HOVERED.TGA",
+        "row_hover":   "RA_UI_JUKEBOX_HOVERSTATE_ALLIED.TGA",
+    },
+    "td": {
+        "button":      "UI_BUTTON_MAIN_08_MID.TGA",
+        "button_hot":  "UI_BUTTON_MAIN_PRESSED_08_MID.TGA",
+        "check_on":    "UI_OPTIONS_CHECK_BOX_CHECK.TGA",
+        "check_off":   "UI_OPTIONS_CHECK_BOX_UNCHECKED.TGA",
+        "fill":        "UI_OPTIONS_SLIDERBAR_FILL.TGA",
+        "ball":        "UI_OPTIONS_SLIDERBAR_BALL.TGA",
+        "play":        "UI_JUKEBOX_PLAYPAUSE_BTN_ON.TGA",
+        "play_hot":    "UI_JUKEBOX_PLAYPAUSE_BTN_HOVER.TGA",
+        "row_hover":   None,
+    },
+}
+TRACK_ICON = {"Tiberian_Dawn": "UI_JUKEBOX_CNCTD_ICON.TGA",
+              "Red_Alert": "UI_JUKEBOX_CNCRA_ICON.TGA"}
+SLIDER_MINUS = "UI_OPTIONS_SLIDERBAR_MINUS.TGA"
+SLIDER_PLUS = "UI_OPTIONS_SLIDERBAR_PLUS.TGA"
 
 # The solid part of the background texture, measured on its alpha channel:
 # x 47..2113, y 33..1585 of 2160x1620.  Same for all three skins.
@@ -63,10 +107,11 @@ def mmss(seconds):
 class _IconTrack(object):
     """Stands in for a Track when only the game emblem is being drawn."""
 
-    __slots__ = ("is_ra",)
+    __slots__ = ("is_ra", "game")
 
     def __init__(self, is_ra):
         self.is_ra = is_ra
+        self.game = "Red_Alert" if is_ra else "Tiberian_Dawn"
 
 
 class Hit(object):
@@ -89,8 +134,9 @@ class JukeboxWindow(QWidget):
         self.accent = ACCENT[self.skin]
 
         self.layout_ = Layout(data.config.get(SKIN_BUI[self.skin]))
-        from .assets import Textures
         self.tex = Textures(data.textures)
+        self.atlas = Atlas(data.textures)
+        self._sprite_cache = {}
         self.bg_img, self.scan_img = self.tex.skin(self.skin)
         self.menu_img = self.tex.menu_background(self.skin)
         self._bg_cache = None
@@ -142,6 +188,23 @@ class JukeboxWindow(QWidget):
             "orbitron" if self.skin != "td" else "francker",
             self.font_families.get("francker", "DejaVu Sans"))
         self._cjk_family = self.font_families.get("cjk", "")
+
+    def sprite(self, key, w, h):
+        """A skin sprite scaled to w x h, cached.  None when unavailable."""
+        name = SPRITES[self.skin].get(key) if key in SPRITES[self.skin] else key
+        if not name or w <= 0 or h <= 0:
+            return None
+        ck = (name, w, h)
+        hit = self._sprite_cache.get(ck)
+        if hit is not None or ck in self._sprite_cache:
+            return hit
+        img = self.atlas.sprite(name)
+        pm = None
+        if img is not None and not img.isNull():
+            pm = QPixmap.fromImage(img.scaled(w, h, Qt.IgnoreAspectRatio,
+                                              Qt.SmoothTransformation))
+        self._sprite_cache[ck] = pm
+        return pm
 
     def font(self, frac, bold=False):
         """A font whose pixel size is a fraction of the window height."""
@@ -346,8 +409,12 @@ class JukeboxWindow(QWidget):
             y = y0 + (i - first) * rh
             row = QRect(inner.x(), y, inner.width(), rh)
             if track is selected:
-                p.fillRect(row, QColor(self.accent.red(), self.accent.green(),
-                                       self.accent.blue(), 130))
+                pm = self.sprite("row_hover", row.width(), row.height())
+                if pm is not None:
+                    p.drawPixmap(row, pm)
+                else:
+                    p.fillRect(row, QColor(self.accent.red(), self.accent.green(),
+                                           self.accent.blue(), 130))
             if track is self.current:
                 p.fillRect(QRect(row.x(), row.y(), 3, row.height()), GOLD)
             icon_w = int(rh * 0.95)
@@ -365,41 +432,35 @@ class JukeboxWindow(QWidget):
         self._paint_scrollbar(p, which, len(items) * rh, inner.height())
 
     def _paint_track_icon(self, p, rect, track):
-        """The original row icons are in no shipped texture, so they are drawn:
-        a brass cog for Tiberian Dawn, a red hammer and sickle for Red Alert,
-        in the games' own colours."""
+        """The game's own 28x28 emblem for the track's title, out of the atlas.
+
+        If the atlas is unavailable the emblems are drawn instead: a brass ring
+        for Tiberian Dawn, a hammer and sickle for Red Alert.
+        """
+        side = min(rect.width(), rect.height())
+        if side <= 0:
+            return
+        box = QRect(rect.x(), rect.y() + (rect.height() - side) // 2, side, side)
+        pm = self.sprite(TRACK_ICON.get(track.game, ""), side, side)
+        if pm is not None:
+            p.drawPixmap(box, pm)
+            return
         p.save()
         p.setRenderHint(QPainter.Antialiasing, True)
-        c = QRectF(rect).center()
-        rad = rect.height() * 0.40
+        c = QRectF(box).center()
+        rad = side * 0.40
         p.translate(c)
         if track.is_ra:
-            red = QColor(206, 44, 38)
-            p.setPen(QPen(red, max(1.5, rad * 0.26), Qt.SolidLine, Qt.RoundCap))
-            p.setBrush(Qt.NoBrush)
-            # sickle: an open arc with a short handle
+            p.setPen(QPen(QColor(228, 196, 48), max(1.5, rad * 0.24),
+                          Qt.SolidLine, Qt.RoundCap))
             p.drawArc(QRectF(-rad * .95, -rad * .95, rad * 1.9, rad * 1.9),
                       -30 * 16, 210 * 16)
             p.drawLine(QPoint(int(-rad * .82), int(rad * .48)),
                        QPoint(int(rad * .30), int(rad * .95)))
-            # hammer: head and shaft
-            p.setPen(Qt.NoPen)
-            p.setBrush(red)
-            p.save()
-            p.rotate(-38)
-            p.drawRect(QRectF(-rad * .13, -rad * .55, rad * .26, rad * 1.5))
-            p.drawRect(QRectF(-rad * .62, -rad * .86, rad * 1.24, rad * .40))
-            p.restore()
         else:
-            gold, dark = QColor(206, 158, 60), QColor(140, 104, 32)
-            p.setPen(Qt.NoPen)
-            p.setBrush(gold)
-            for _ in range(4):                    # eight teeth
-                p.drawRect(QRectF(-rad * .17, -rad * 1.05, rad * .34, rad * 2.1))
-                p.rotate(45)
-            p.drawEllipse(QPoint(0, 0), int(rad * .82), int(rad * .82))
-            p.setBrush(dark)
-            p.drawEllipse(QPoint(0, 0), int(rad * .32), int(rad * .32))
+            p.setPen(QPen(QColor(206, 158, 60), max(1.5, rad * 0.30)))
+            p.setBrush(Qt.NoBrush)
+            p.drawEllipse(QPoint(0, 0), int(rad * .80), int(rad * .80))
         p.restore()
 
     def _paint_scrollbar(self, p, which, content_h, view_h):
@@ -417,6 +478,13 @@ class JukeboxWindow(QWidget):
 
     # -- buttons ---------------------------------------------------------
     def _plate(self, p, rect, label, enabled=True):
+        pm = self.sprite("button", rect.width(), rect.height())
+        if pm is not None:
+            p.drawPixmap(rect, pm)
+            self._text(p, rect, label, 0.0165,
+                       TEXT if enabled else QColor(120, 120, 120),
+                       Qt.AlignCenter, elide=True)
+            return
         g = QLinearGradient(rect.topLeft(), rect.bottomLeft())
         g.setColorAt(0.0, QColor(126, 130, 134))
         g.setColorAt(0.5, QColor(78, 82, 86))
@@ -453,6 +521,11 @@ class JukeboxWindow(QWidget):
     def _checkbox(self, p, rect, on, kind):
         side = min(rect.width(), rect.height())
         box = QRect(rect.x(), rect.y() + (rect.height() - side) // 2, side, side)
+        pm = self.sprite("check_on" if on else "check_off", side, side)
+        if pm is not None:
+            p.drawPixmap(box, pm)
+            self.hits.append(Hit(box, kind))
+            return
         p.setPen(QPen(QColor(20, 20, 20), 2))
         p.setBrush(QColor(self.accent) if on else QColor(70, 26, 26)
                    if self.skin == "soviet" else QColor(40, 40, 46))
@@ -507,27 +580,48 @@ class JukeboxWindow(QWidget):
         track = QRect(rect.x() + rect.height() // 2, cy - max(2, rect.height() // 6),
                       rect.width() - rect.height(), max(4, rect.height() // 3))
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor(30, 12, 12) if self.skin == "soviet" else QColor(24, 26, 32))
+        p.setBrush(QColor(26, 10, 10) if self.skin == "soviet" else QColor(20, 22, 28))
         p.drawRoundedRect(track, track.height() / 2.0, track.height() / 2.0)
-        filled = QRect(track.x(), track.y(), int(track.width() * frac), track.height())
-        p.setBrush(self.accent)
-        p.drawRoundedRect(filled, track.height() / 2.0, track.height() / 2.0)
-        kx = track.x() + int(track.width() * frac)
-        knob_r = rect.height() * 0.5
-        p.setBrush(self.accent.lighter(120))
-        p.setPen(QPen(QColor(20, 20, 20), 1))
-        p.drawEllipse(QPoint(kx, cy), int(knob_r), int(knob_r))
-        # "-" and "+" affordances, as in the game
-        p.setPen(QPen(TEXT_DIM, 2))
-        p.drawLine(rect.x() - 14, cy, rect.x() - 6, cy)
-        p.drawLine(rect.right() + 6, cy, rect.right() + 14, cy)
-        p.drawLine(rect.right() + 10, cy - 4, rect.right() + 10, cy + 4)
+
+        fw = int(track.width() * frac)
+        if fw > 0:
+            pm = self.sprite("fill", fw, track.height())
+            if pm is not None:
+                p.drawPixmap(QRect(track.x(), track.y(), fw, track.height()), pm)
+            else:
+                p.setBrush(self.accent)
+                p.drawRoundedRect(QRect(track.x(), track.y(), fw, track.height()),
+                                  track.height() / 2.0, track.height() / 2.0)
+
+        kx = track.x() + fw
+        ball = int(rect.height() * 1.05)
+        pm = self.sprite("ball", ball, ball)
+        if pm is not None:
+            p.drawPixmap(QRect(kx - ball // 2, cy - ball // 2, ball, ball), pm)
+        else:
+            p.setBrush(self.accent.lighter(120))
+            p.setPen(QPen(QColor(20, 20, 20), 1))
+            p.drawEllipse(QPoint(kx, cy), ball // 2, ball // 2)
+
+        sgn = int(rect.height() * 0.9)
+        for name, x in ((SLIDER_MINUS, rect.x() - sgn - 4),
+                        (SLIDER_PLUS, rect.right() + 4)):
+            pm = self.sprite(name, sgn, sgn)
+            if pm is not None:
+                p.drawPixmap(QRect(x, cy - sgn // 2, sgn, sgn), pm)
         self.hits.append(Hit(rect.adjusted(-4, -6, 4, 6), "slider:" + kind))
 
     # -- now playing -----------------------------------------------------
     def _paint_now_playing(self, p):
         t = self.data
         btn = self.r("play_button")
+        pm = self.sprite("play_hot" if self.player.state == "playing" else "play",
+                         btn.width(), btn.height())
+        if pm is not None:
+            p.drawPixmap(btn, pm)
+            self.hits.append(Hit(btn, "playpause"))
+            self._paint_now_playing_text(p)
+            return
         g = QLinearGradient(btn.topLeft(), btn.bottomLeft())
         g.setColorAt(0.0, QColor(120, 124, 128))
         g.setColorAt(0.5, QColor(74, 78, 82))
@@ -552,6 +646,10 @@ class JukeboxWindow(QWidget):
             p.fillPath(path, GOLD)
         self.hits.append(Hit(btn, "playpause"))
 
+        self._paint_now_playing_text(p)
+
+    def _paint_now_playing_text(self, p):
+        t = self.data
         if self._status:
             self._text(p, self.r("now_playing_text"), self._status, 0.0150,
                        QColor(230, 120, 120), Qt.AlignHCenter | Qt.AlignVCenter)

@@ -85,3 +85,78 @@ class Textures(object):
     def icon(self, game):
         stem = self.ICONS.get(game)
         return self._named(stem) if stem else None
+
+# ---------------------------------------------------------------------------
+# MT_COMMANDBAR_COMMON - the shared UI sprite atlas
+#
+# The jukebox layouts name sprites like "ui_jukebox_cnctd_icon" that exist in
+# no archive as a file of their own.  They live in a 6871x6716 atlas,
+# MT_COMMANDBAR_COMMON.TGA (176 MiB, uncompressed 32-bit, bottom-left origin),
+# indexed by MT_COMMANDBAR_COMMON.MTD:
+#
+#     uint32  0xFFFFFFFE           magic
+#     int32   count
+#     count x { uint32 namelen, char name[namelen], int32 rect[8], uint8 pad }
+#
+# where rect is (x, y, w, h, 0, 0, w, h) with y measured from the top.  The
+# atlas is far too large to hold in memory, so only the rows a sprite occupies
+# are read out of the archive.
+# ---------------------------------------------------------------------------
+ATLAS_MTD = "DATA\\ART\\TEXTURES\\SRGB\\MT_COMMANDBAR_COMMON.MTD"
+ATLAS_TGA = "DATA\\ART\\TEXTURES\\SRGB\\MT_COMMANDBAR_COMMON.TGA"
+
+
+class Atlas(object):
+
+    def __init__(self, meg):
+        self._meg = meg
+        self._cache = {}
+        self._index = {}
+        self._tga = None
+        raw = meg.get(ATLAS_MTD)
+        if raw is None:
+            return
+        magic, count = struct.unpack_from("<Ii", raw, 0)
+        o = 8
+        for _ in range(count):
+            if o + 4 > len(raw):
+                break
+            nlen = struct.unpack_from("<I", raw, o)[0]
+            o += 4
+            name = raw[o:o + nlen].rstrip(b"\x00").decode("ascii", "replace")
+            o += nlen
+            if o + 33 > len(raw):
+                break
+            self._index[name.upper()] = struct.unpack_from("<4i", raw, o)
+            o += 33                       # 8 x int32 plus one padding byte
+        hit = meg._index.get(ATLAS_TGA.lower())
+        if hit is None:
+            return
+        size, base = hit
+        head = meg.read(base, 18)
+        if head[2] != 2 or head[16] != 32:            # uncompressed, 32-bit
+            return
+        w, h = struct.unpack_from("<HH", head, 12)
+        self._tga = (base + 18 + head[0], w, h)
+
+    def __contains__(self, name):
+        return name.upper() in self._index and self._tga is not None
+
+    def sprite(self, name):
+        """-> QImage for one named sprite, or None."""
+        key = name.upper()
+        if key in self._cache:
+            return self._cache[key]
+        img = None
+        if self._tga is not None and key in self._index:
+            pix, w, h = self._tga
+            x, y, sw, sh = self._index[key]
+            if sw > 0 and sh > 0 and x >= 0 and y >= 0 and x + sw <= w and y + sh <= h:
+                rows = []
+                for r in range(y, y + sh):
+                    fr = h - 1 - r                     # TGA origin is bottom-left
+                    rows.append(self._meg.read(pix + (fr * w + x) * 4, sw * 4))
+                buf = b"".join(rows)
+                img = QImage(buf, sw, sh, sw * 4, QImage.Format_ARGB32).copy()
+        self._cache[key] = img
+        return img

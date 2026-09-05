@@ -23,6 +23,7 @@ Nothing here is eyeballed from a screenshot. Every part is read from the game:
 | --- | --- |
 | Geometry of all ~40 widgets | `.BUI` layout files in `CONFIG.MEG` |
 | Frame, panels, scanlines, menu backdrop | `TEXTURES_SRGB.MEG` |
+| Emblems, buttons, checkboxes, sliders, play button | `MT_COMMANDBAR_COMMON`, the shared sprite atlas |
 | Typefaces (RA_Orbitron, Francker, Noto CJK) | `DATA\ART\FONTS` in `CONFIG.MEG` |
 | Every caption and label | `MASTERTEXTFILE_<LANG>.LOC` |
 | Track titles, durations, game, type | `<MusicJukeboxTracksList>` |
@@ -87,13 +88,10 @@ with it.
 ## Not reproduced
 
 - **The launcher window.** The window that appears when you press Play in
-  Steam belongs to `ClientLauncherG.exe`, a Windows binary whose interface
-  assets are embedded in the executable rather than in the data archives.
-  Rebuilding its chrome would mean guessing, so it is left alone.
-- **The two row emblems.** `ui_jukebox_cnctd_icon` and `ui_jukebox_cncra_icon`
-  are named by the layouts but are in none of the shipped texture archives.
-  A brass cog and a red hammer and sickle are drawn instead, in the games'
-  own colours.
+  Steam belongs to `ClientLauncherG.exe`. Its artwork *is* recoverable — the
+  whole interface sits in that executable's PE resources as uncompressed
+  bitmaps — but unlike the jukebox it has no `.BUI`, so the layout would have
+  to be measured by hand. Not done yet.
 - **No screenshots in this repository.** Any picture of the running window
   would be a picture of EA's artwork.
 
