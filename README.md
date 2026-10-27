@@ -145,6 +145,10 @@ We Will Stop Them ∕ Deception (Remastered).mp3
 MP3 is 44.1 kHz at 320 kbps; `--format flac` is bit-exact against the source.
 Ctrl+C is safe, and the next run resumes where it stopped.
 
+`--lang` picks the language the *titles* are read in. What the program itself
+says follows your system locale instead, and falls back to English where there
+is no translation.
+
 ## How it works
 
 The interesting parts are written down rather than left in the code:

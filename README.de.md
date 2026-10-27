@@ -149,6 +149,10 @@ MP3 sind 44,1 kHz bei 320 kbit/s; `--format flac` ist bitgenau zur Quelle.
 Strg+C ist unbedenklich, und der nächste Lauf macht dort weiter, wo er
 aufgehört hat.
 
+`--lang` wählt die Sprache, in der die *Titel* gelesen werden. Was das
+Programm selbst sagt, richtet sich dagegen nach der Systemsprache und fällt
+auf Englisch zurück, wo es keine Übersetzung gibt.
+
 ## Wie es funktioniert
 
 Die interessanten Teile sind aufgeschrieben, statt nur im Code zu stehen:

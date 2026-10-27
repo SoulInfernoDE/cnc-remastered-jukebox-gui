@@ -1,14 +1,70 @@
 #!/usr/bin/env bash
 #
-# cnc_trackexport - Exportiert den Soundtrack der "Command & Conquer Remastered
-#                   Collection" als getaggte MP3s (oder FLAC/WAV).
+# cnc_trackexport - Exports the soundtrack of the "Command & Conquer
+#                   Remastered Collection" as tagged MP3s (or FLAC/WAV).
 #
-# Erfordert eine eigene Installation des Spiels.  Es werden keine Spieldaten
-# mitgeliefert.  Nur fuer den privaten Gebrauch.
+# Requires your own installation of the game.  No game data is shipped with
+# it.  For personal use only.
 #
 set -euo pipefail
 
-usage() {
+# Which language to speak.  English is the base and the fallback; a
+# translation is used only where the locale asks for one and it exists.
+ui_lang() {
+    local tag="${LC_ALL:-${LC_MESSAGES:-${LANG:-${LANGUAGE:-}}}}"
+    tag="${tag%%:*}"; tag="${tag%%.*}"; tag="${tag%%_*}"
+    case "$(printf %s "$tag" | tr "A-Z" "a-z")" in
+        de) echo de ;;
+        *)  echo en ;;
+    esac
+}
+
+usage_en() {
+cat <<'USAGE'
+cnc_trackexport - soundtrack export for the C&C Remastered Collection (Linux)
+
+The filenames are exactly the titles the game shows in its own jukebox.  They
+are not guessed; they are read out of the game data:
+
+  Data/MUSIC.MEG   the audio (Petroglyph MEG V3)
+  Data/CONFIG.MEG  DATA\XML\AUDIO\AUDIO_SYSTEM_CONSTANTS.XML
+                     <MusicJukeboxTracksList>  = the jukebox list itself
+                   DATA\TEXT\MASTERTEXTFILE_<LANG>.LOC
+                     text id -> the displayed title
+
+Usage:  cnc_trackexport [OPTIONS]
+
+  -o, --out DIR      output directory
+                     Default: the game's own soundtrack folder, that is
+                     Documents/CnCRemastered/Soundtrack inside the Proton
+                     prefix, next to Mods, Save and Replays.  Steam leaves
+                     that alone on updates.  If it cannot be found, the
+                     music folder is used instead.
+  -g, --game DIR     game directory        (default: autodetected)
+  -f, --format FMT   output format         (default: mp3)
+                       mp3   44.1 kHz / 320 kbit/s, tagged, with cover
+                       flac  LOSSLESS, original sample rate, tagged, with
+                             cover.  Bit-exact against the source, and
+                             about 2.5x the space for it (some 3.3 GiB).
+                       wav   the untouched ADPCM files straight out of the
+                             archive, byte for byte, without tags
+  -l, --lang LANG    EN-US, DE-DE, ...     (default: EN-US)
+  -j, --jobs N       parallel encoders     (default: CPU cores, max 16)
+      --no-cover     do not embed artwork
+      --portable     restrict filenames to plain ASCII (FAT32 and friends)
+      --force        re-encode instead of skipping existing files
+      --list         show the mapping only, write nothing
+  -h, --help         this help
+
+Environment:
+  CNC_REMASTERED_DIR   the game directory, if the search fails.
+
+Only the finished tracks land in the output directory - no temporary files
+are created at all.
+USAGE
+}
+
+usage_de() {
 cat <<'USAGE'
 cnc_trackexport - Soundtrack-Export fuer C&C Remastered Collection (Linux)
 
@@ -53,6 +109,13 @@ keinerlei temporaere Dateien angelegt.
 USAGE
 }
 
+usage() {
+    case "$(ui_lang)" in
+        de) usage_de ;;
+        *)  usage_en ;;
+    esac
+}
+
 for arg in "$@"; do
     case "$arg" in
         -h|--help) usage; exit 0 ;;
@@ -60,23 +123,27 @@ for arg in "$@"; do
 done
 
 if ! command -v python3 >/dev/null 2>&1; then
-    echo "Fehler: python3 wird benoetigt." >&2
+    case "$(ui_lang)" in
+        de) echo "Fehler: python3 wird benoetigt." >&2 ;;
+        *)  echo "Error: python3 is required." >&2 ;;
+    esac
     echo "  Debian/Ubuntu: sudo apt install python3" >&2
     echo "  Fedora:        sudo dnf install python3" >&2
     echo "  Arch:          sudo pacman -S python" >&2
     exit 1
 fi
 
-# Erzwingt UTF-8 unabhaengig von der Locale.  Ohne das scheitert die Ausgabe
-# der Titel (und teils das Anlegen der Dateien) auf Systemen mit LANG=C.
+# Force UTF-8 whatever the locale says.  Without it, printing the titles -
+# and sometimes creating the files - fails on a system with LANG=C.
 export PYTHONUTF8=1
 export PYTHONIOENCODING=utf-8
 
 exec python3 - "$@" <<'PYTHON_EOF'
 # -*- coding: utf-8 -*-
-"""Soundtrack-Export fuer die C&C Remastered Collection (Linux, Python 3.6+)."""
+"""Soundtrack export for the C&C Remastered Collection (Linux, Python 3.6+)."""
 
 import argparse
+import locale
 import os
 import re
 import shutil
@@ -88,8 +155,137 @@ import threading
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
+
+# ---------------------------------------------------------------------------
+# What the program says.  English is the base and the fallback: a translation
+# is used only where the locale asks for one and the key exists there, so a
+# missing entry degrades to English rather than to nothing.  Track titles,
+# tag values and filenames are not in here - those come from the game, or
+# are names rather than text.
+# ---------------------------------------------------------------------------
+MESSAGES = {
+    "en": {
+        "need_python":  "Error: Python 3.6 or newer is required.\n",
+        "error":        "Error: %s\n",
+        "not_meg":      "%s is not a MEG file (too short).",
+        "not_meg_v3":   "%s is not a MEG V3 archive (magic %#010x).",
+        "names_broken": "%s: name table damaged (%d entries instead of %d).",
+        "table_short":  "%s: file table too short (%d bytes for %d records).",
+        "name_index":   "%s: name index %d is outside the table.",
+        "loc_format":   "MASTERTEXTFILE: read %d of %d bytes - unexpected format.",
+        "no_list":      "<MusicJukeboxTracksList> not found in "
+                        "AUDIO_SYSTEM_CONSTANTS.XML.",
+        "not_jpeg":     "the answer is not a JPEG",
+        "cover_failed": "Warning: artwork could not be loaded (%s) - tagging "
+                        "without a cover.\n",
+        "no_game":      "CnCRemastered not found.\n"
+                        "       Give the path with --game, or set "
+                        "CNC_REMASTERED_DIR.",
+        "no_file":      "Not found: %s\n"
+                        "       Does --game really point at the game directory?",
+        "no_ffmpeg":    "ffmpeg is required.\n"
+                        "       Debian/Ubuntu: sudo apt install ffmpeg\n"
+                        "       Fedora:        sudo dnf install ffmpeg\n"
+                        "       Arch:          sudo pacman -S ffmpeg",
+        "no_encoder":   "The installed ffmpeg does not know the encoder '%s'.\n"
+                        "       On Fedora/RHEL the ffmpeg from RPM Fusion "
+                        "usually helps.",
+        "reading":      "Reading the jukebox database from CONFIG.MEG ...",
+        "no_xml":       "%s is not in CONFIG.MEG.",
+        "no_lang":      "Language '%s' is not present.  Available: %s",
+        "unmatched":    "Warning: %d file(s) with no jukebox entry, named after "
+                        "the filename instead: %s\n",
+        "list_total":   "\n%d tracks.",
+        "no_mkdir":     "Cannot create the output directory: %s",
+        "no_write":     "No permission to write in %s",
+        "no_space":     "Not enough room in %s: %.1f GiB free, about %.1f GiB "
+                        "needed.",
+        "fetching":     "Fetching artwork ...",
+        "exporting":    "Exporting %d tracks to %s  (%s, %d in parallel) ...",
+        "bad_riff":     "damaged RIFF data in the archive",
+        "ffmpeg_exit":  "ffmpeg exited with %d",
+        "interrupted":  "\nStopped.  Finished tracks are kept, and another run "
+                        "carries on from there.\n",
+        "summary":      "\nDone: %d exported, %d skipped, %d failed.",
+        "failed_line":  "  FAILED  %s: %s\n",
+        "directory":    "Directory: %s",
+    },
+    "de": {
+        "need_python":  "Fehler: Python 3.6 oder neuer wird benoetigt.\n",
+        "error":        "Fehler: %s\n",
+        "not_meg":      "%s ist keine MEG-Datei (zu kurz).",
+        "not_meg_v3":   "%s ist kein MEG-V3-Archiv (Magic %#010x).",
+        "names_broken": "%s: Namenstabelle defekt (%d statt %d Eintraege).",
+        "table_short":  "%s: Dateitabelle zu kurz (%d Byte fuer %d Saetze).",
+        "name_index":   "%s: Namensindex %d ausserhalb der Tabelle.",
+        "loc_format":   "MASTERTEXTFILE: %d von %d Byte gelesen - Format "
+                        "unerwartet.",
+        "no_list":      "<MusicJukeboxTracksList> nicht in "
+                        "AUDIO_SYSTEM_CONSTANTS.XML gefunden.",
+        "not_jpeg":     "Antwort ist kein JPEG",
+        "cover_failed": "Warnung: Artwork nicht ladbar (%s) - es wird ohne "
+                        "Cover getaggt.\n",
+        "no_game":      "CnCRemastered nicht gefunden.\n"
+                        "       Pfad per --game angeben oder "
+                        "CNC_REMASTERED_DIR setzen.",
+        "no_file":      "Nicht gefunden: %s\n"
+                        "       Zeigt --game wirklich auf das "
+                        "Spielverzeichnis?",
+        "no_ffmpeg":    "ffmpeg wird benoetigt.\n"
+                        "       Debian/Ubuntu: sudo apt install ffmpeg\n"
+                        "       Fedora:        sudo dnf install ffmpeg\n"
+                        "       Arch:          sudo pacman -S ffmpeg",
+        "no_encoder":   "Das installierte ffmpeg kennt den Encoder '%s' "
+                        "nicht.\n"
+                        "       Bei Fedora/RHEL hilft meist das ffmpeg aus "
+                        "RPM Fusion.",
+        "reading":      "Lese Jukebox-Datenbank aus CONFIG.MEG ...",
+        "no_xml":       "%s nicht in CONFIG.MEG enthalten.",
+        "no_lang":      "Sprache '%s' nicht vorhanden.  Verfuegbar: %s",
+        "unmatched":    "Warnung: %d Datei(en) ohne Jukebox-Eintrag, Name aus "
+                        "dem Dateinamen abgeleitet: %s\n",
+        "list_total":   "\n%d Titel.",
+        "no_mkdir":     "Zielverzeichnis nicht anlegbar: %s",
+        "no_write":     "Keine Schreibrechte in %s",
+        "no_space":     "Zu wenig Platz in %s: %.1f GiB frei, etwa %.1f GiB "
+                        "noetig.",
+        "fetching":     "Lade Artwork ...",
+        "exporting":    "Exportiere %d Titel nach %s  (%s, %d parallel) ...",
+        "bad_riff":     "defekte RIFF-Daten im Archiv",
+        "ffmpeg_exit":  "ffmpeg beendet mit %d",
+        "interrupted":  "\nAbgebrochen.  Fertige Titel bleiben erhalten, ein "
+                        "erneuter Lauf setzt dort auf.\n",
+        "summary":      "\nFertig: %d exportiert, %d uebersprungen, "
+                        "%d fehlgeschlagen.",
+        "failed_line":  "  FEHLER  %s: %s\n",
+        "directory":    "Verzeichnis: %s",
+    },
+}
+
+
+def _language():
+    for var in ("LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE"):
+        tag = os.environ.get(var)
+        if tag:
+            break
+    else:
+        try:
+            tag = locale.getdefaultlocale()[0] or ""
+        except (ValueError, TypeError):
+            tag = ""
+    tag = (tag or "").split(":")[0].split(".")[0].replace("-", "_")
+    return tag.split("_")[0].lower()
+
+
+def _(key, *args):
+    """One message, in the user's language where there is one."""
+    table = MESSAGES.get(_language(), MESSAGES["en"])
+    text = table.get(key) or MESSAGES["en"][key]
+    return text % args if args else text
+
+
 if sys.version_info < (3, 6):
-    sys.stderr.write("Fehler: Python 3.6 oder neuer wird benoetigt.\n")
+    sys.stderr.write(_("need_python"))
     sys.exit(1)
 
 for _s in (sys.stdout, sys.stderr):
@@ -108,26 +304,26 @@ COVER_URL = ("https://shared.akamai.steamstatic.com/store_item_assets"
 XML_PATH = "DATA\\XML\\AUDIO\\AUDIO_SYSTEM_CONSTANTS.XML"
 LOC_PATH = "DATA\\TEXT\\MASTERTEXTFILE_{}.LOC"
 
-# Alle Quellen liegen bei 44,1 kHz oder darunter, deshalb ist das das Ziel.
+# Every source sits at 44.1 kHz or below, so that is what everything goes to.
 TARGET_RATE = 44100
 
 
 def die(msg):
-    sys.stderr.write("Fehler: %s\n" % msg)
+    sys.stderr.write(_("error", msg))
     sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
 # Petroglyph MEG V3
 #
-#   uint32  0xFFFFFFFF              optionales Praefix
-#   uint32  0x3F7D70A4              Magic
-#   uint32  data_start              Beginn der Nutzdaten
+#   uint32  0xFFFFFFFF              optional prefix
+#   uint32  0x3F7D70A4              magic
+#   uint32  data_start              first byte of the payload
 #   uint32  num_filenames
 #   uint32  num_files
 #   uint32  filename_table_size
-#   Namenstabelle:  num_filenames x (uint16 Laenge + ASCII, ohne NUL)
-#   Dateitabelle:   num_files x 20 Byte, UNALIGNED gepackt:
+#   name table:  num_filenames x (uint16 length + ASCII, no NUL)
+#   file table:  num_files x 20 bytes, packed UNALIGNED:
 #       uint16 flags | uint32 crc32 | uint32 index |
 #       uint32 size  | uint32 offset | uint16 name_index
 # ---------------------------------------------------------------------------
@@ -137,14 +333,14 @@ class Meg(object):
         with open(path, "rb") as f:
             head = f.read(8)
             if len(head) < 8:
-                die("%s ist keine MEG-Datei (zu kurz)." % path)
+                die(_("not_meg", path))
             first, second = struct.unpack("<II", head)
             if first == 0xFFFFFFFF and second == MEG_MAGIC:
                 base = 8
             elif first == MEG_MAGIC:
                 base = 4
             else:
-                die("%s ist kein MEG-V3-Archiv (Magic %#010x)." % (path, first))
+                die(_("not_meg_v3", path, first))
 
             f.seek(base)
             data_start, n_names, n_files, tbl_size = struct.unpack("<4I", f.read(16))
@@ -156,14 +352,12 @@ class Meg(object):
                 names.append(tbl[o:o + ln].decode("ascii", "replace"))
                 o += ln
             if len(names) != n_names:
-                die("%s: Namenstabelle defekt (%d statt %d Eintraege)."
-                    % (path, len(names), n_names))
+                die(_("names_broken", path, len(names), n_names))
 
-            # Hinter der Dateitabelle darf Padding stehen, davor nicht.
+            # Padding may follow the file table; there is none before it.
             rec_start = base + 16 + tbl_size
             if data_start - rec_start < n_files * 20:
-                die("%s: Dateitabelle zu kurz (%d Byte fuer %d Saetze)."
-                    % (path, data_start - rec_start, n_files))
+                die(_("table_short", path, data_start - rec_start, n_files))
             recs = f.read(n_files * 20)
 
         self.entries = []                       # (name, size, offset)
@@ -173,7 +367,7 @@ class Meg(object):
             size, offset = struct.unpack_from("<II", recs, b + 10)
             ni = struct.unpack_from("<H", recs, b + 18)[0]
             if ni >= len(names):
-                die("%s: Namensindex %d ausserhalb der Tabelle." % (path, ni))
+                die(_("name_index", path, ni))
             self.entries.append((names[ni], size, offset))
             self._index[names[ni].lower()] = (size, offset)
         self._local = threading.local()
@@ -198,9 +392,9 @@ class Meg(object):
 # MASTERTEXTFILE_*.LOC
 #
 #   uint32 count
-#   count x (uint32 key_hash, uint32 wert_laenge_in_zeichen, uint32 key_laenge)
-#   danach ALLE Werte am Stueck als UTF-16LE
-#   danach ALLE Schluessel am Stueck als ASCII
+#   count x (uint32 key_hash, uint32 value_length_in_chars, uint32 key_length)
+#   then ALL values in one block, UTF-16LE
+#   then ALL keys in one block, ASCII
 # ---------------------------------------------------------------------------
 def parse_loc(data):
     n = struct.unpack_from("<I", data, 0)[0]
@@ -215,8 +409,7 @@ def parse_loc(data):
         keys.append(data[o:o + klen].decode("ascii", "replace"))
         o += klen
     if o != len(data):
-        die("MASTERTEXTFILE: %d von %d Byte gelesen - Format unerwartet."
-            % (o, len(data)))
+        die(_("loc_format", o, len(data)))
     return dict(zip(keys, values))
 
 
@@ -225,7 +418,7 @@ def parse_jukebox(xml):
         blk = xml[xml.index("<MusicJukeboxTracksList>"):
                   xml.index("</MusicJukeboxTracksList>")]
     except ValueError:
-        die("<MusicJukeboxTracksList> nicht in AUDIO_SYSTEM_CONSTANTS.XML gefunden.")
+        die(_("no_list"))
 
     def tag(body, name):
         m = re.search(r"<%s>\s*(.*?)\s*</%s>" % (name, name), body, re.S)
@@ -262,7 +455,7 @@ def steam_roots():
         os.path.join(home, "snap", "steam", "common", ".local",
                      "share", "Steam"),                                 # Snap
     ]
-    # Weitere Bibliotheken stehen in libraryfolders.vdf.
+    # Any further libraries are listed in libraryfolders.vdf.
     for r in list(roots):
         for vdf in (os.path.join(r, "steamapps", "libraryfolders.vdf"),
                     os.path.join(r, "config", "libraryfolders.vdf")):
@@ -325,10 +518,9 @@ CTRL = dict.fromkeys(range(0x20))
 
 
 def safe_name(title, portable):
-    # "/" darf in keinem Dateinamen stehen.  U+2215 DIVISION SLASH sieht
-    # identisch aus und ist auf ext4, NTFS und FAT32 gleichermassen erlaubt,
-    # der Name bleibt also optisch der aus der Jukebox.  Das Feld "title" im
-    # Tag behaelt in jedem Fall den echten Schraegstrich.
+    # No filename may hold a "/".  U+2215 DIVISION SLASH looks identical and
+    # is allowed on ext4, NTFS and FAT32 alike, so the name still reads as the
+    # one in the jukebox.  The "title" tag keeps the real slash either way.
     n = title.replace("/", "∕").replace("\\", "-")
     n = n.translate(CTRL)
     if portable:
@@ -336,7 +528,9 @@ def safe_name(title, portable):
         n = re.sub(r'[:*?"<>|]', "", n)
         n = n.encode("ascii", "replace").decode("ascii").replace("?", "")
     n = re.sub(r"\s+", " ", n).strip().rstrip(". ")
-    return n or "Unbenannt"
+    # A filename rather than a message, so it stays put whatever the locale
+    # is - an export should not be named differently on a German machine.
+    return n or "Untitled"
 
 
 def fetch_cover():
@@ -345,21 +539,20 @@ def fetch_cover():
         with urllib.request.urlopen(req, timeout=30) as r:
             data = r.read()
         if not data.startswith(b"\xff\xd8"):
-            raise ValueError("Antwort ist kein JPEG")
+            raise ValueError(_("not_jpeg"))
         return data
     except Exception as e:
-        sys.stderr.write("Warnung: Artwork nicht ladbar (%s) - es wird ohne "
-                         "Cover getaggt.\n" % e)
+        sys.stderr.write(_("cover_failed", e))
         return None
 
 
 class Cover(object):
-    """Haelt das Artwork im RAM und reicht es ffmpeg als /dev/fd/N herein.
+    """Holds the artwork in memory and hands ffmpeg /dev/fd/N for it.
 
-    So entsteht nirgends eine temporaere Datei.  Jedes ffmpeg oeffnet den
-    Pfad selbst, bekommt also eine eigene Dateiposition - parallele Jobs
-    stoeren sich nicht.  Ohne memfd_create (Python < 3.8) faellt die Klasse
-    auf eine Datei im System-Temp zurueck, nie ins Zielverzeichnis.
+    That way no temporary file is created anywhere.  Each ffmpeg opens the
+    path itself and so gets its own file position, which keeps parallel jobs
+    out of each other's way.  Without memfd_create (Python < 3.8) it falls
+    back to a file in the system temp directory, never the output one.
     """
 
     def __init__(self, data):
@@ -395,8 +588,8 @@ class Cover(object):
 
 # ---------------------------------------------------------------------------
 def build_command(track, dest, fmt, cover):
-    # Das WAV kommt ueber stdin, das Artwork ueber /dev/fd/N - beides aus dem
-    # RAM, es wird keine Zwischendatei angelegt.
+    # The WAV arrives on stdin and the artwork through /dev/fd/N, both out of
+    # memory, so nothing is written in between.
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
            "-f", "wav", "-i", "pipe:0"]
     if cover.path:
@@ -406,16 +599,16 @@ def build_command(track, dest, fmt, cover):
         cmd += ["-map", "0:a"]
 
     if fmt == "mp3":
-        # Gemessen an den Originalen: unterhalb 32 kHz greift MPEG-2 Layer III,
-        # das bei 22,05 kHz auf 160 kbit/s gedeckelt ist und zusaetzlich bei
-        # rund 9,9 kHz abschneidet - dabei gehen ueber 80 % der Energie im
-        # obersten Band verloren.  Auf 44,1 kHz gebracht kodiert LAME als
-        # MPEG-1 und gibt die Quelle vollstaendig wieder.  Deshalb einheitlich
-        # 44,1 kHz / 320 kbit/s, auch fuer die Classic-Titel.
+        # Measured against the originals: below 32 kHz LAME drops into
+        # MPEG-2 Layer III, which is capped at 160 kbit/s at 22.05 kHz and
+        # also rolls off around 9.9 kHz - losing over 80 % of the energy in
+        # the top band.  Brought to 44.1 kHz it encodes as MPEG-1 and renders
+        # the source in full.  Hence 44.1 kHz / 320 kbit/s throughout, the
+        # Classic tracks included.
         cmd += ["-c:a", "libmp3lame", "-ar", str(TARGET_RATE), "-b:a", "320k",
                 "-id3v2_version", "3"]
     else:
-        # FLAC ist verlustfrei - hier bleibt die Original-Abtastrate.
+        # FLAC is lossless, so the original sample rate stays.
         cmd += ["-c:a", "flac", "-compression_level", "8"]
 
     artist = ("Frank Klepacki & The Tiberian Sons"
@@ -452,8 +645,7 @@ def main():
 
     game = args.game or find_game_dir()
     if not game:
-        die("CnCRemastered nicht gefunden.\n"
-            "       Pfad per --game angeben oder CNC_REMASTERED_DIR setzen.")
+        die(_("no_game"))
     if not args.out:
         args.out = soundtrack_dir(game)
     data_dir = os.path.join(game, "Data")
@@ -461,45 +653,39 @@ def main():
     config_meg = os.path.join(data_dir, "CONFIG.MEG")
     for p in (music_meg, config_meg):
         if not os.path.isfile(p):
-            die("Nicht gefunden: %s\n"
-                "       Zeigt --game wirklich auf das Spielverzeichnis?" % p)
+            die(_("no_file", p))
 
     if args.format in ("mp3", "flac") and not args.list:
         if not shutil.which("ffmpeg"):
-            die("ffmpeg wird benoetigt.\n"
-                "       Debian/Ubuntu: sudo apt install ffmpeg\n"
-                "       Fedora:        sudo dnf install ffmpeg\n"
-                "       Arch:          sudo pacman -S ffmpeg")
+            die(_("no_ffmpeg"))
         enc = "libmp3lame" if args.format == "mp3" else "flac"
         if not have_encoder(enc):
-            die("Das installierte ffmpeg kennt den Encoder '%s' nicht.\n"
-                "       Bei Fedora/RHEL hilft meist das ffmpeg aus RPM Fusion." % enc)
+            die(_("no_encoder", enc))
 
-    # --- Jukebox-Namen aus den Spieldaten holen ---------------------------
-    print("Lese Jukebox-Datenbank aus CONFIG.MEG ...")
+    # --- the jukebox names, out of the game data --------------------------
+    print(_("reading"))
     config = Meg(config_meg)
 
     raw_xml = config.find(XML_PATH)
     if raw_xml is None:
-        die("%s nicht in CONFIG.MEG enthalten." % XML_PATH)
+        die(_("no_xml", XML_PATH))
     jukebox = parse_jukebox(raw_xml.decode("utf-8", "replace"))
 
     raw_loc = config.find(LOC_PATH.format(args.lang.upper()))
     if raw_loc is None:
         langs = sorted(n.rsplit("_", 1)[-1][:-4] for n, _, _ in config.entries
                        if n.upper().startswith("DATA\\TEXT\\MASTERTEXTFILE_"))
-        die("Sprache '%s' nicht vorhanden.  Verfuegbar: %s"
-            % (args.lang, ", ".join(langs)))
+        die(_("no_lang", args.lang, ", ".join(langs)))
     text = parse_loc(raw_loc)
 
-    # --- Audiodaten -------------------------------------------------------
+    # --- the audio --------------------------------------------------------
     music = Meg(music_meg)
     tracks, unmatched = [], []
     for name, size, offset in music.entries:
         base = name.split("\\")[-1]
         info = jukebox.get(base.lower())
         if info and info["text_id"] in text:
-            # "&&" ist im UI-Framework das Escape fuer ein einzelnes "&".
+            # In the UI framework "&&" is the escape for a single "&".
             title = text[info["text_id"]].replace("&&", "&")
             game_name, ttype, secs = info["game"], info["type"], info["secs"]
         else:
@@ -511,11 +697,10 @@ def main():
                        "size": size, "offset": offset, "src": base, "secs": secs})
 
     if unmatched:
-        sys.stderr.write("Warnung: %d Datei(en) ohne Jukebox-Eintrag, Name aus "
-                         "dem Dateinamen abgeleitet: %s\n"
-                         % (len(unmatched), ", ".join(unmatched[:5])))
+        sys.stderr.write(_("unmatched", len(unmatched),
+                             ", ".join(unmatched[:5])))
 
-    # Die Jukebox sortiert alphabetisch - die Tracknummern folgen dem.
+    # The jukebox sorts alphabetically, and the track numbers follow it.
     tracks.sort(key=lambda t: t["title"].lower())
     total = len(tracks)
     for i, t in enumerate(tracks, 1):
@@ -526,17 +711,17 @@ def main():
         for t in tracks:
             print("%3d/%d  %-52s  [%s %s]  <- %s"
                   % (t["no"], total, t["title"], t["game"], t["type"], t["src"]))
-        print("\n%d Titel." % total)
+        print(_("list_total", total))
         return 0
 
     try:
         os.makedirs(args.out, exist_ok=True)
     except OSError as e:
-        die("Zielverzeichnis nicht anlegbar: %s" % e)
+        die(_("no_mkdir", e))
     if not os.access(args.out, os.W_OK):
-        die("Keine Schreibrechte in %s" % os.path.abspath(args.out))
+        die(_("no_write", os.path.abspath(args.out)))
 
-    # Platzbedarf abschaetzen, bevor 200 Encoder loslaufen.
+    # Estimate the space needed before 200 encoders set off.
     secs = sum(t["secs"] for t in tracks) or 0
     if args.format == "mp3":
         need = secs * 40000                       # 320 kbit/s
@@ -547,19 +732,19 @@ def main():
     try:
         free = shutil.disk_usage(args.out).free
         if need and free < need * 1.05:
-            die("Zu wenig Platz in %s: %.1f GiB frei, etwa %.1f GiB noetig."
-                % (os.path.abspath(args.out), free / 2**30, need / 2**30))
+            die(_("no_space", os.path.abspath(args.out),
+                  free / 2**30, need / 2**30))
     except OSError:
         pass
 
     art = None
     if not args.no_cover and args.format != "wav":
-        print("Lade Artwork ...")
+        print(_("fetching"))
         art = fetch_cover()
     cover = Cover(art)
 
-    print("Exportiere %d Titel nach %s  (%s, %d parallel) ..."
-          % (total, os.path.abspath(args.out), args.format.upper(), args.jobs))
+    print(_("exporting", total, os.path.abspath(args.out),
+            args.format.upper(), args.jobs))
 
     lock = threading.Lock()
     state = {"n": 0, "done": 0, "skipped": 0, "failed": []}
@@ -579,7 +764,7 @@ def main():
         if len(wav) != t["size"] or not wav.startswith(b"RIFF"):
             with lock:
                 state["n"] += 1
-                state["failed"].append((t["title"], "defekte RIFF-Daten im Archiv"))
+                state["failed"].append((t["title"], _("bad_riff")))
             return
 
         with lock:
@@ -601,7 +786,7 @@ def main():
                         state["n"] += 1
                         state["failed"].append(
                             (t["title"], msg[-1] if msg else
-                             "ffmpeg beendet mit %d" % proc.returncode))
+                             _("ffmpeg_exit", proc.returncode)))
                     return
         finally:
             with lock:
@@ -622,18 +807,17 @@ def main():
                 os.remove(p)
             except OSError:
                 pass
-        sys.stderr.write("\nAbgebrochen.  Fertige Titel bleiben erhalten, ein "
-                         "erneuter Lauf setzt dort auf.\n")
+        sys.stderr.write(_("interrupted"))
         rc = 130
     finally:
         cover.close()
 
     if rc == 0:
-        print("\nFertig: %d exportiert, %d uebersprungen, %d fehlgeschlagen."
-              % (state["done"], state["skipped"], len(state["failed"])))
+        print(_("summary", state["done"], state["skipped"],
+                len(state["failed"])))
         for title, why in state["failed"]:
-            sys.stderr.write("  FEHLER  %s: %s\n" % (title, why))
-        print("Verzeichnis: %s" % os.path.abspath(args.out))
+            sys.stderr.write(_("failed_line", title, why))
+        print(_("directory", os.path.abspath(args.out)))
         if state["failed"]:
             rc = 1
     return rc
