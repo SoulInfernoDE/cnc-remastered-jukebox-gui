@@ -49,6 +49,19 @@ sudo pacman -S python-pyqt5 ffmpeg         # Arch
 
 The exporter alone needs neither PyQt5 nor a sound server.
 
+**If PyQt5 is installed and the jukebox still says it is missing**, it belongs
+to a different interpreter than the one `python3` points at — which is the
+normal state of a machine that uses uv, pyenv or a packaged virtual
+environment. Nothing needs doing: the jukebox looks for an interpreter that
+has Qt, hands over to it, and remembers the answer. Where no interpreter on
+the machine has one, it sets up a private environment in
+`~/.cache/cnc-jukebox/venv` and installs PyQt5 from PyPI into that instead —
+a download, and therefore the last resort rather than the first move.
+
+To decide yourself: `CNC_JUKEBOX_PYTHON=/usr/bin/python3 ./cnc-jukebox` names
+an interpreter, and `CNC_JUKEBOX_NO_VENV=1` forbids the private environment.
+See [`docs/PYTHON.md`](docs/PYTHON.md).
+
 ## Install
 
 ```bash
@@ -143,6 +156,7 @@ The interesting parts are written down rather than left in the code:
 | [`docs/REBUILD.md`](docs/REBUILD.md) | what the rebuild does with all that, and where the game's data surprises |
 | [`docs/SOUNDTRACK-EXPORT.md`](docs/SOUNDTRACK-EXPORT.md) | title mapping, audio quality measurements, tags |
 | [`docs/STEAM.md`](docs/STEAM.md) | the launcher companion, and why this is not a Workshop item |
+| [`docs/PYTHON.md`](docs/PYTHON.md) | how an interpreter with Qt is found, and what to do when none has it |
 
 Each of them is also available in German; the link sits at the top of each.
 

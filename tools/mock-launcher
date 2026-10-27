@@ -30,6 +30,8 @@ import sys
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 
+from jukebox.bootstrap import ensure_qt
+
 TITLE = "CnCRemastered"           # what the real one puts in WM_NAME
 WINDOW = (560, 618)               # the size the real one opens at
 PROCESS = b"ClientLauncherG"      # what Proton calls the real one, to the byte
@@ -54,6 +56,8 @@ def main():
     ap.add_argument("--at", default="320,120", metavar="X,Y",
                     help="where to put the window (default: 320,120)")
     args = ap.parse_args()
+
+    ensure_qt()                   # may hand over to an interpreter with Qt
 
     from PyQt5.QtWidgets import QApplication, QWidget
     from PyQt5.QtGui import QPainter

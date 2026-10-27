@@ -11,6 +11,9 @@ import os
 import sys
 
 os.environ.setdefault("PYTHONUTF8", "1")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from jukebox.bootstrap import ensure_qt
 
 
 def main():
@@ -31,17 +34,12 @@ def main():
                          "not the launcher window was ever found")
     args = ap.parse_args()
 
-    try:
-        from PyQt5.QtWidgets import QApplication, QMessageBox
-    except ImportError:
-        sys.stderr.write(
-            "PyQt5 is required.\n"
-            "  Debian/Ubuntu: sudo apt install python3-pyqt5\n"
-            "  Fedora:        sudo dnf install python3-qt5\n"
-            "  Arch:          sudo pacman -S python-pyqt5\n")
-        return 1
+    # Hands over to an interpreter that has Qt if this one has not; see
+    # jukebox/bootstrap.py.  Parsing the arguments first keeps --help
+    # answerable on a machine with no Qt at all.
+    ensure_qt()
 
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from PyQt5.QtWidgets import QApplication, QMessageBox
     from jukebox.gamedata import GameData, GameDataError
 
     app = QApplication(sys.argv)

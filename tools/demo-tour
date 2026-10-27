@@ -33,6 +33,10 @@ import sys
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 
+from jukebox.bootstrap import ensure_qt
+
+ensure_qt()                       # may hand over to an interpreter with Qt
+
 from PyQt5.QtCore import QObject, QRect, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import (QColor, QFont, QFontDatabase, QImage, QLinearGradient,
                          QPainter, QPen)
