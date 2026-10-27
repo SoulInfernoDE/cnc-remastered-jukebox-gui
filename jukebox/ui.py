@@ -151,7 +151,7 @@ FASTENERS = {
 }
 
 PROJECT_URL = ("https://github.com/SoulInfernoDE/"
-               "cnc-remastered-jukebox/tree/gui")
+               "cnc-remastered-jukebox-gui")
 
 # "Soundbox" names a screen the game does not have, and neither does the
 # switch for our own button sounds, so there is no string for either - these

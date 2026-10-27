@@ -443,7 +443,7 @@ def main():
 
     step(4.0, "", "", "", card((
         "GITHUB.COM/SOULINFERNODE",
-        "cnc-remastered-jukebox  ·  Branch gui",
+        "cnc-remastered-jukebox-gui",
         "Inoffizielles Fan-Projekt  ·  MIT  ·  nicht von EA  ·  "
         "das Originalspiel wird benötigt")))
 

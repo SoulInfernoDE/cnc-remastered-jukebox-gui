@@ -88,6 +88,7 @@ Qt; it is the wrong answer for a machine that merely has it somewhere else.
 
 ## The exporter is not affected
 
-`cnc_trackexport` uses nothing but the standard library, so any interpreter
-runs it — including uv's. It was checked under CPython 3.15 and reads all 203
-tracks correctly.
+The [exporter](https://github.com/SoulInfernoDE/cnc-remastered-jukebox-trackexport),
+which is its own program in a repository of its own, uses nothing but the
+standard library, so any interpreter runs it — including uv's. It was checked
+under CPython 3.15 and reads all 203 tracks correctly.

@@ -92,6 +92,7 @@ die falsche.
 
 ## Der Exporter ist nicht betroffen
 
-`cnc_trackexport` verwendet ausschließlich die Standardbibliothek, jeder
-Interpreter führt ihn also aus — auch der von uv. Geprüft unter CPython 3.15,
-er liest alle 203 Titel korrekt.
+Der [Exporter](https://github.com/SoulInfernoDE/cnc-remastered-jukebox-trackexport),
+ein eigenes Programm in einem eigenen Repository, verwendet ausschließlich die
+Standardbibliothek, jeder Interpreter führt ihn also aus — auch der von uv.
+Geprüft unter CPython 3.15, er liest alle 203 Titel korrekt.

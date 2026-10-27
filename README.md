@@ -1,19 +1,15 @@
-# cnc-remastered-jukebox
+# cnc-jukebox
 
 ***English** · [Deutsch](README.de.md)*
 
 The music of the **Command & Conquer Remastered Collection**, outside the game.
 
-Two programs, both reading your own installation at runtime:
-
-- **`cnc-jukebox`** — the game's music jukebox rebuilt as a standalone Linux
-  window. Same layout, same skin, same typefaces, same captions in your
-  system's language.
-- **`cnc_trackexport`** — the whole soundtrack as tagged files, named exactly
-  the way the jukebox names them.
+The game's music jukebox, rebuilt as a standalone Linux window: same layout,
+same skin, same typefaces, same captions in your system's language — all of it
+read from your own installation at runtime.
 
 > **You need your own copy of the game.** This repository ships no audio, no
-> artwork, no extracted data and no game code — only programs that read the
+> artwork, no extracted data and no game code — only a program that reads the
 > files already on your disk. Linux only.
 
 ---
@@ -28,26 +24,25 @@ Two programs, both reading your own installation at runtime:
 - **Every track, not only the unlocked ones.** Classic recordings and Bonus
   arrangements sit in the same list as the Remastered ones, filtered however
   you like.
-- **The tracks as files.** All 203 of them, for a phone, a car, or anywhere the
-  game will never run.
+- **The tracks as files, too.** A separate program,
+  [the exporter](https://github.com/SoulInfernoDE/cnc-remastered-jukebox-trackexport),
+  writes all 203 of them out for a phone, a car, or anywhere the game will
+  never run.
 - **Nothing is modified.** No patched binaries, no replaced files, no injected
-  code. Both programs read the installation and write only their own output, so
+  code. The jukebox reads the installation and writes only its own settings, so
   there is nothing to undo and nothing for an update to break.
 
 ## Requirements
 
 - Command & Conquer Remastered Collection, installed (Steam, Origin/EA, GOG)
 - Linux, `python3` 3.6 or newer
-- `ffmpeg` — and, for the jukebox, `PyQt5` plus one of `paplay`, `aplay` or
-  `ffplay`
+- `PyQt5`, `ffmpeg`, and one of `paplay`, `aplay` or `ffplay` for output
 
 ```bash
 sudo apt install python3-pyqt5 ffmpeg      # Debian / Ubuntu
 sudo dnf install python3-qt5 ffmpeg        # Fedora (ffmpeg via RPM Fusion)
 sudo pacman -S python-pyqt5 ffmpeg         # Arch
 ```
-
-The exporter alone needs neither PyQt5 nor a sound server.
 
 **If PyQt5 is installed and the jukebox still says it is missing**, it belongs
 to a different interpreter than the one `python3` points at — which is the
@@ -65,8 +60,8 @@ See [`docs/PYTHON.md`](docs/PYTHON.md).
 ## Install
 
 ```bash
-git clone https://github.com/SoulInfernoDE/cnc-remastered-jukebox.git
-cd cnc-remastered-jukebox
+git clone https://github.com/SoulInfernoDE/cnc-remastered-jukebox-gui.git
+cd cnc-remastered-jukebox-gui
 ```
 
 There is nothing to build. The game directory is found automatically —
@@ -100,7 +95,7 @@ Three controls in the header, each with a hover hint:
 | | |
 | --- | --- |
 | **Left fastener** | opens this project on GitHub |
-| **Folder** | opens the folder the exporter writes to |
+| **Folder** | opens the soundtrack folder, where the exporter writes its files |
 | **Right fastener** | changes the skin, the way the game puts up a building |
 
 Two more at the bottom: **Exit**, and a button that switches between the
@@ -113,41 +108,13 @@ Settings live in `~/.config/cnc-jukebox/playlist.json`.
 
 ## Exporting the soundtrack
 
-```bash
-./cnc_trackexport
-```
+That is a separate program in a repository of its own:
+[**cnc-remastered-jukebox-trackexport**](https://github.com/SoulInfernoDE/cnc-remastered-jukebox-trackexport).
+It writes all 203 tracks as tagged files, named exactly the way this jukebox
+names them — 12 hours 6 minutes, about 1.6 GiB. It needs neither PyQt5 nor a
+sound server: one script on top of `python3` and `ffmpeg`.
 
-203 tracks, 12 hours 6 minutes, about 1.6 GiB, written to the game's own user
-folder by default. The filenames are the titles the jukebox shows, character
-for character:
-
-```
-Act On Instinct (Classic).mp3
-Act On Instinct – Tiberian Sons (Bonus).mp3
-Grinder 1 & 2 Medley – Tiberian Sons (Bonus).mp3
-Hell March Original Demo (Bonus, Unlocked).mp3
-We Will Stop Them ∕ Deception (Remastered).mp3
-```
-
-```
-  -o, --out DIR      output directory        (default: the game's own folder)
-  -g, --game DIR     game directory          (default: autodetected)
-  -f, --format FMT   mp3 | flac | wav        (default: mp3)
-  -l, --lang LANG    EN-US, DE-DE, ...       (default: EN-US)
-  -j, --jobs N       parallel encoders       (default: CPU cores, max 16)
-      --no-cover     do not embed artwork
-      --portable     restrict filenames to plain ASCII (FAT32 etc.)
-      --force        re-encode instead of skipping existing files
-      --list         show the mapping, write nothing
-  -h, --help         help
-```
-
-MP3 is 44.1 kHz at 320 kbps; `--format flac` is bit-exact against the source.
-Ctrl+C is safe, and the next run resumes where it stopped.
-
-`--lang` picks the language the *titles* are read in. What the program itself
-says follows your system locale instead, and falls back to English where there
-is no translation.
+The **Folder** button above opens the directory it writes to.
 
 ## How it works
 
@@ -158,17 +125,10 @@ The interesting parts are written down rather than left in the code:
 | [`docs/FILE-FORMATS.md`](docs/FILE-FORMATS.md) | the MEG container, the `.LOC` string table, the track list |
 | [`docs/JUKEBOX-UI.md`](docs/JUKEBOX-UI.md) | the game's `.BUI` layouts, textures, fonts and sprite atlas |
 | [`docs/REBUILD.md`](docs/REBUILD.md) | what the rebuild does with all that, and where the game's data surprises |
-| [`docs/SOUNDTRACK-EXPORT.md`](docs/SOUNDTRACK-EXPORT.md) | title mapping, audio quality measurements, tags |
 | [`docs/STEAM.md`](docs/STEAM.md) | the launcher companion, and why this is not a Workshop item |
 | [`docs/PYTHON.md`](docs/PYTHON.md) | how an interpreter with Qt is found, and what to do when none has it |
 
 Each of them is also available in German; the link sits at the top of each.
-
-## Branches
-
-The stable exporter lives on [`export`](../../tree/export) on its own, with no
-dependencies beyond `python3` and `ffmpeg`. This branch, [`gui`](../../tree/gui),
-carries the jukebox and the exporter together.
 
 ## No screenshots
 
@@ -185,10 +145,6 @@ The repository ships no game content whatsoever — no audio, no artwork, no
 extracted data, and no code from the game. It reads only files that a licensed
 installation already put on your own machine, and is intended for personal use
 with a copy you own. Do not redistribute what it produces.
-
-By default the exporter fetches the game's public Steam store image at runtime
-to embed as cover art for your personal files. That image is EA's; it is never
-stored in this repository. Use `--no-cover` to skip it.
 
 The music is by Frank Klepacki, and for the Bonus arrangements by Frank
 Klepacki & The Tiberian Sons.

@@ -1,20 +1,17 @@
-# cnc-remastered-jukebox
+# cnc-jukebox
 
 *[English](README.md) · **Deutsch***
 
 Die Musik der **Command & Conquer Remastered Collection**, außerhalb des Spiels.
 
-Zwei Programme, die beide zur Laufzeit aus deiner eigenen Installation lesen:
-
-- **`cnc-jukebox`** — die Musik-Jukebox des Spiels, nachgebaut als eigenständiges
-  Linux-Fenster. Dasselbe Layout, derselbe Skin, dieselben Schriften, dieselben
-  Beschriftungen in der Sprache deines Systems.
-- **`cnc_trackexport`** — der komplette Soundtrack als getaggte Dateien, benannt
-  genau so, wie die Jukebox die Titel anzeigt.
+Die Musik-Jukebox des Spiels, nachgebaut als eigenständiges Linux-Fenster:
+dasselbe Layout, derselbe Skin, dieselben Schriften, dieselben Beschriftungen
+in der Sprache deines Systems — alles zur Laufzeit aus deiner eigenen
+Installation gelesen.
 
 > **Du brauchst dein eigenes Exemplar des Spiels.** Dieses Repository enthält
 > keine Audiodaten, keine Grafiken, keine extrahierten Daten und keinen
-> Spielcode — nur Programme, die die Dateien lesen, die ohnehin auf deiner
+> Spielcode — nur ein Programm, das die Dateien liest, die ohnehin auf deiner
 > Platte liegen. Nur unter Linux.
 
 ---
@@ -29,27 +26,27 @@ Zwei Programme, die beide zur Laufzeit aus deiner eigenen Installation lesen:
 - **Jeder Titel, nicht nur die freigeschalteten.** Die Classic-Aufnahmen und die
   Bonus-Arrangements stehen in derselben Liste wie die remasterten, gefiltert
   wie du magst.
-- **Die Titel als Dateien.** Alle 203, fürs Telefon, fürs Auto oder für überall
-  dort, wo das Spiel nie laufen wird.
+- **Die Titel auch als Dateien.** Ein eigenes Programm,
+  [der Exporter](https://github.com/SoulInfernoDE/cnc-remastered-jukebox-trackexport),
+  schreibt alle 203 heraus — fürs Telefon, fürs Auto oder für überall dort, wo
+  das Spiel nie laufen wird.
 - **Nichts wird verändert.** Keine gepatchten Binärdateien, keine ersetzten
-  Dateien, kein eingeschleuster Code. Beide Programme lesen die Installation und
-  schreiben nur ihre eigene Ausgabe — es gibt nichts rückgängig zu machen und
-  nichts, was ein Update kaputtmachen könnte.
+  Dateien, kein eingeschleuster Code. Die Jukebox liest die Installation und
+  schreibt nur ihre eigenen Einstellungen — es gibt nichts rückgängig zu machen
+  und nichts, was ein Update kaputtmachen könnte.
 
 ## Voraussetzungen
 
 - Command & Conquer Remastered Collection, installiert (Steam, Origin/EA, GOG)
 - Linux, `python3` 3.6 oder neuer
-- `ffmpeg` — und für die Jukebox zusätzlich `PyQt5` sowie eines von `paplay`,
-  `aplay` oder `ffplay`
+- `PyQt5`, `ffmpeg` sowie eines von `paplay`, `aplay` oder `ffplay` für die
+  Ausgabe
 
 ```bash
 sudo apt install python3-pyqt5 ffmpeg      # Debian / Ubuntu
 sudo dnf install python3-qt5 ffmpeg        # Fedora (ffmpeg über RPM Fusion)
 sudo pacman -S python-pyqt5 ffmpeg         # Arch
 ```
-
-Der Exporter allein braucht weder PyQt5 noch einen Soundserver.
 
 **Wenn PyQt5 installiert ist und die Jukebox es trotzdem vermisst**, gehört es
 zu einem anderen Interpreter als dem, auf den `python3` zeigt — der
@@ -67,8 +64,8 @@ Umgebung. Siehe [`docs/PYTHON.de.md`](docs/PYTHON.de.md).
 ## Installation
 
 ```bash
-git clone https://github.com/SoulInfernoDE/cnc-remastered-jukebox.git
-cd cnc-remastered-jukebox
+git clone https://github.com/SoulInfernoDE/cnc-remastered-jukebox-gui.git
+cd cnc-remastered-jukebox-gui
 ```
 
 Es gibt nichts zu bauen. Das Spielverzeichnis wird automatisch gefunden —
@@ -103,7 +100,7 @@ Drei Bedienelemente in der Kopfleiste, jedes mit einem Hinweis beim Überfahren:
 | | |
 | --- | --- |
 | **Linker Bolzen** | öffnet dieses Projekt auf GitHub |
-| **Ordner** | öffnet den Ordner, in den der Exporter schreibt |
+| **Ordner** | öffnet den Soundtrack-Ordner, in den der Exporter seine Dateien schreibt |
 | **Rechter Bolzen** | wechselt den Skin, so wie das Spiel ein Gebäude hochzieht |
 
 Zwei weitere unten: **Beenden** und ein Knopf, der zwischen der Jukebox und der
@@ -116,42 +113,13 @@ Einstellungen liegen in `~/.config/cnc-jukebox/playlist.json`.
 
 ## Den Soundtrack exportieren
 
-```bash
-./cnc_trackexport
-```
+Das ist ein eigenes Programm in einem eigenen Repository:
+[**cnc-remastered-jukebox-trackexport**](https://github.com/SoulInfernoDE/cnc-remastered-jukebox-trackexport).
+Es schreibt alle 203 Titel als getaggte Dateien, benannt genau so, wie diese
+Jukebox sie anzeigt — 12 Stunden 6 Minuten, rund 1,6 GiB. Es braucht weder
+PyQt5 noch einen Soundserver: ein Skript auf `python3` und `ffmpeg`.
 
-203 Titel, 12 Stunden 6 Minuten, rund 1,6 GiB, standardmäßig in den eigenen
-Benutzerordner des Spiels geschrieben. Die Dateinamen sind die Titel, die die
-Jukebox anzeigt, Zeichen für Zeichen:
-
-```
-Act On Instinct (Classic).mp3
-Act On Instinct – Tiberian Sons (Bonus).mp3
-Grinder 1 & 2 Medley – Tiberian Sons (Bonus).mp3
-Hell March Original Demo (Bonus, Unlocked).mp3
-We Will Stop Them ∕ Deception (Remastered).mp3
-```
-
-```
-  -o, --out DIR      Zielverzeichnis        (Standard: der Ordner des Spiels)
-  -g, --game DIR     Spielverzeichnis       (Standard: automatisch gesucht)
-  -f, --format FMT   mp3 | flac | wav       (Standard: mp3)
-  -l, --lang LANG    EN-US, DE-DE, ...      (Standard: EN-US)
-  -j, --jobs N       parallele Encoder      (Standard: CPU-Kerne, max. 16)
-      --no-cover     kein Artwork einbetten
-      --portable     Dateinamen auf reines ASCII beschränken (FAT32 usw.)
-      --force        neu erzeugen statt vorhandene Dateien überspringen
-      --list         nur die Zuordnung anzeigen, nichts schreiben
-  -h, --help         Hilfe
-```
-
-MP3 sind 44,1 kHz bei 320 kbit/s; `--format flac` ist bitgenau zur Quelle.
-Strg+C ist unbedenklich, und der nächste Lauf macht dort weiter, wo er
-aufgehört hat.
-
-`--lang` wählt die Sprache, in der die *Titel* gelesen werden. Was das
-Programm selbst sagt, richtet sich dagegen nach der Systemsprache und fällt
-auf Englisch zurück, wo es keine Übersetzung gibt.
+Der Knopf **Ordner** oben öffnet das Verzeichnis, in das es schreibt.
 
 ## Wie es funktioniert
 
@@ -162,17 +130,10 @@ Die interessanten Teile sind aufgeschrieben, statt nur im Code zu stehen:
 | [`docs/FILE-FORMATS.de.md`](docs/FILE-FORMATS.de.md) | der MEG-Container, die `.LOC`-Zeichenkettentabelle, die Titelliste |
 | [`docs/JUKEBOX-UI.de.md`](docs/JUKEBOX-UI.de.md) | die `.BUI`-Layouts des Spiels, Texturen, Schriften und Sprite-Atlas |
 | [`docs/REBUILD.de.md`](docs/REBUILD.de.md) | was der Nachbau daraus macht, und wo die Spieldaten überraschen |
-| [`docs/SOUNDTRACK-EXPORT.de.md`](docs/SOUNDTRACK-EXPORT.de.md) | Titelzuordnung, Messungen zur Audioqualität, Tags |
 | [`docs/STEAM.de.md`](docs/STEAM.de.md) | der Begleiter am Launcher, und warum das kein Workshop-Element ist |
 | [`docs/PYTHON.de.md`](docs/PYTHON.de.md) | wie ein Interpreter mit Qt gefunden wird, und was gilt, wenn keiner einen hat |
 
 Jedes Dokument gibt es auch auf Englisch; oben in jedem steht der Verweis.
-
-## Branches
-
-Der stabile Exporter liegt für sich allein auf [`export`](../../tree/export),
-ohne Abhängigkeiten jenseits von `python3` und `ffmpeg`. Dieser Branch,
-[`gui`](../../tree/gui), trägt die Jukebox und den Exporter zusammen.
 
 ## Keine Screenshots
 
@@ -191,11 +152,6 @@ Grafiken, keine extrahierten Daten und keinen Code aus dem Spiel. Es liest
 ausschließlich Dateien, die eine lizenzierte Installation ohnehin auf deinem
 Rechner abgelegt hat, und ist für den persönlichen Gebrauch mit einem Exemplar
 gedacht, das dir gehört. Gib nicht weiter, was dabei entsteht.
-
-Standardmäßig lädt der Exporter zur Laufzeit das öffentliche Steam-Store-Bild
-des Spiels, um es als Cover in deine persönlichen Dateien einzubetten. Dieses
-Bild gehört EA; es wird nie in diesem Repository gespeichert. Mit `--no-cover`
-bleibt es außen vor.
 
 Die Musik stammt von Frank Klepacki, bei den Bonus-Arrangements von Frank
 Klepacki & The Tiberian Sons.
